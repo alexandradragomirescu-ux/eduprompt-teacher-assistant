@@ -322,16 +322,16 @@ export default function EduPromptApp() {
           max-width: 780px; margin: 0 auto;
           background: var(--surface); border-radius: var(--radius);
           border: 1px solid var(--border); box-shadow: var(--shadow);
-          padding: 32px 36px;
+          padding: 32px 36px; text-align: left;
         }
-        .result-content h1 { font-family: var(--font-display); font-size: 1.5rem; color: var(--accent); margin: 28px 0 12px; font-weight: 400; }
-        .result-content h2 { font-family: var(--font-display); font-size: 1.25rem; color: var(--accent); margin: 24px 0 10px; font-weight: 400; }
-        .result-content h3 { font-family: var(--font-display); font-size: 1.1rem; color: var(--ink); margin: 20px 0 8px; font-weight: 400; }
-        .result-content p { font-size: 0.9rem; line-height: 1.75; color: var(--ink); margin-bottom: 10px; }
+        .result-content h1 { font-family: var(--font-display); font-size: 1.5rem; color: var(--accent); margin: 28px 0 12px; font-weight: 400; text-align: left; }
+        .result-content h2 { font-family: var(--font-display); font-size: 1.25rem; color: var(--accent); margin: 24px 0 10px; font-weight: 400; text-align: left; }
+        .result-content h3 { font-family: var(--font-display); font-size: 1.1rem; color: var(--ink); margin: 20px 0 8px; font-weight: 400; text-align: left; }
+        .result-content p { font-size: 0.9rem; line-height: 1.75; color: var(--ink); margin-bottom: 10px; text-align: left; }
         .result-content strong { color: var(--accent); font-weight: 600; }
         .result-content em { color: var(--ink2); }
-        .result-content ul { padding-left: 20px; margin-bottom: 12px; }
-        .result-content li { font-size: 0.9rem; line-height: 1.7; color: var(--ink); margin-bottom: 4px; }
+        .result-content ul { padding-left: 20px; margin-bottom: 12px; text-align: left; }
+        .result-content li { font-size: 0.9rem; line-height: 1.7; color: var(--ink); margin-bottom: 4px; text-align: left; }
         .result-content hr { border: none; border-top: 1px solid var(--border); margin: 20px 0; }
 
         .copy-bar {
