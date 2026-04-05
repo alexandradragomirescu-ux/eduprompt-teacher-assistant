@@ -86,6 +86,97 @@ function md(text) {
   return h;
 }
 
+/* ── DOCX download (HTML→Word-compatible .doc) ── */
+function downloadAsDocx(markdownText) {
+  const htmlContent = md(markdownText);
+  const docTemplate = `
+<!DOCTYPE html>
+<html xmlns:o="urn:schemas-microsoft-com:office:office"
+      xmlns:w="urn:schemas-microsoft-com:office:word"
+      xmlns="http://www.w3.org/TR/REC-html40">
+<head>
+<meta charset="utf-8">
+<style>
+  body {
+    font-family: 'Segoe UI', Calibri, Arial, sans-serif;
+    font-size: 11pt;
+    line-height: 1.6;
+    color: #1a1a2e;
+    max-width: 700px;
+    margin: 0 auto;
+    padding: 40px;
+  }
+  h1 {
+    font-family: 'Georgia', serif;
+    font-size: 18pt;
+    color: #B8621B;
+    margin-top: 24pt;
+    margin-bottom: 8pt;
+    border-bottom: 2px solid #E8E2D8;
+    padding-bottom: 6pt;
+  }
+  h2 {
+    font-family: 'Georgia', serif;
+    font-size: 15pt;
+    color: #B8621B;
+    margin-top: 20pt;
+    margin-bottom: 6pt;
+  }
+  h3 {
+    font-family: 'Georgia', serif;
+    font-size: 13pt;
+    color: #1a1a2e;
+    margin-top: 16pt;
+    margin-bottom: 6pt;
+  }
+  p {
+    font-size: 11pt;
+    margin-bottom: 6pt;
+  }
+  strong {
+    color: #B8621B;
+  }
+  ul {
+    padding-left: 20pt;
+    margin-bottom: 8pt;
+  }
+  li {
+    font-size: 11pt;
+    margin-bottom: 3pt;
+    line-height: 1.6;
+  }
+  hr {
+    border: none;
+    border-top: 1px solid #E8E2D8;
+    margin: 16pt 0;
+  }
+</style>
+</head>
+<body>
+<div style="text-align: center; margin-bottom: 24pt; padding-bottom: 16pt; border-bottom: 3px solid #B8621B;">
+  <h1 style="border-bottom: none; color: #B8621B; font-size: 20pt; margin-bottom: 4pt;">EduPrompt Teacher Assistant</h1>
+  <p style="color: #4A4A6A; font-size: 10pt;">Materiale didactice generate automat</p>
+</div>
+${htmlContent}
+<div style="margin-top: 32pt; padding-top: 12pt; border-top: 2px solid #E8E2D8; text-align: center;">
+  <p style="color: #4A4A6A; font-size: 9pt;">Generat cu EduPrompt Teacher Assistant</p>
+</div>
+</body>
+</html>`;
+
+  const blob = new Blob(['\ufeff', docTemplate], { type: 'application/msword' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  const now = new Date();
+  const dateStr = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
+  a.download = `materiale-didactice-${dateStr}.doc`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
 /* ── icons ── */
 const BookIcon = () => (
   <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -105,6 +196,11 @@ const CopyIcon = () => (
 const CheckIcon = () => (
   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
     <polyline points="20 6 9 17 4 12"/>
+  </svg>
+);
+const DownloadIcon = () => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
   </svg>
 );
 const ImageIcon = () => (
@@ -132,11 +228,10 @@ export default function EduPromptApp() {
   const [activeChip, setActiveChip] = useState(null);
   const [numGrila, setNumGrila] = useState(5);
   const [numAnaliza, setNumAnaliza] = useState(3);
-  const [imageData, setImageData] = useState(null); // { base64, mediaType, preview }
+  const [imageData, setImageData] = useState(null);
   const [dragOver, setDragOver] = useState(false);
   const resultRef = useRef(null);
   const fileInputRef = useRef(null);
-  const textareaRef = useRef(null);
 
   const loadingMessages = [
     "Analizez conținutul lecției...",
@@ -153,7 +248,6 @@ export default function EduPromptApp() {
     return () => clearInterval(iv);
   }, [loading]);
 
-  // Process image file into base64
   const processImage = useCallback((file) => {
     if (!file || !file.type.startsWith("image/")) return;
     if (file.size > 20 * 1024 * 1024) {
@@ -164,13 +258,11 @@ export default function EduPromptApp() {
     reader.onload = (e) => {
       const dataUrl = e.target.result;
       const base64 = dataUrl.split(",")[1];
-      const mediaType = file.type;
-      setImageData({ base64, mediaType, preview: dataUrl, name: file.name });
+      setImageData({ base64, mediaType: file.type, preview: dataUrl, name: file.name });
     };
     reader.readAsDataURL(file);
   }, []);
 
-  // Handle paste (Ctrl+V image)
   useEffect(() => {
     const handlePaste = (e) => {
       if (phase !== "input") return;
@@ -188,17 +280,12 @@ export default function EduPromptApp() {
     return () => document.removeEventListener("paste", handlePaste);
   }, [phase, processImage]);
 
-  // Build message content (text only, image only, or both)
   function buildUserContent(promptText) {
     const parts = [];
     if (imageData) {
       parts.push({
         type: "image",
-        source: {
-          type: "base64",
-          media_type: imageData.mediaType,
-          data: imageData.base64
-        }
+        source: { type: "base64", media_type: imageData.mediaType, data: imageData.base64 }
       });
     }
     parts.push({ type: "text", text: promptText });
@@ -242,26 +329,20 @@ export default function EduPromptApp() {
     const prompt = inputText.trim()
       ? `Iată textul lecției pe care doresc să-l prelucrezi:\n\n${inputText}`
       : "Analizează imaginea atașată care conține textul lecției și generează materialele didactice.";
-    const content = buildUserContent(prompt);
-    callAPI(content, SYSTEM_PROMPT);
+    callAPI(buildUserContent(prompt), SYSTEM_PROMPT);
   }
 
   function handleFocusedGenerate(type) {
     if (!inputText.trim() && !imageData) return;
     setActiveChip(type);
     let systemPrompt;
-    if (type === "grila") {
-      systemPrompt = FOCUSED_PROMPTS.grila(numGrila);
-    } else if (type === "analiza") {
-      systemPrompt = FOCUSED_PROMPTS.analiza(numAnaliza);
-    } else {
-      systemPrompt = FOCUSED_PROMPTS[type];
-    }
+    if (type === "grila") systemPrompt = FOCUSED_PROMPTS.grila(numGrila);
+    else if (type === "analiza") systemPrompt = FOCUSED_PROMPTS.analiza(numAnaliza);
+    else systemPrompt = FOCUSED_PROMPTS[type];
     const prompt = inputText.trim()
       ? `Iată textul lecției:\n\n${inputText}`
       : "Analizează imaginea atașată care conține textul lecției.";
-    const content = buildUserContent(prompt);
-    callAPI(content, systemPrompt);
+    callAPI(buildUserContent(prompt), systemPrompt);
   }
 
   function handleOption(opt) {
@@ -285,18 +366,10 @@ export default function EduPromptApp() {
     setImageData(null);
   }
 
-  // Drag & drop handlers
-  function handleDragOver(e) {
-    e.preventDefault();
-    setDragOver(true);
-  }
-  function handleDragLeave(e) {
-    e.preventDefault();
-    setDragOver(false);
-  }
+  function handleDragOver(e) { e.preventDefault(); setDragOver(true); }
+  function handleDragLeave(e) { e.preventDefault(); setDragOver(false); }
   function handleDrop(e) {
-    e.preventDefault();
-    setDragOver(false);
+    e.preventDefault(); setDragOver(false);
     const file = e.dataTransfer?.files?.[0];
     if (file) processImage(file);
   }
@@ -309,152 +382,59 @@ export default function EduPromptApp() {
       <style>{`
         * { margin: 0; padding: 0; box-sizing: border-box; }
         :root {
-          --bg: #FAF7F2;
-          --surface: #FFFFFF;
-          --ink: #1A1A2E;
-          --ink2: #4A4A6A;
-          --accent: #B8621B;
-          --accent2: #D4881C;
-          --accent-soft: #FFF3E6;
-          --border: #E8E2D8;
-          --green: #2D8F5E;
-          --green-soft: #E8F5EE;
-          --blue: #2563EB;
-          --blue-soft: #EFF6FF;
-          --purple: #7C3AED;
-          --purple-soft: #F3EEFF;
-          --red: #DC2626;
-          --red-soft: #FEF2F2;
-          --radius: 12px;
+          --bg: #FAF7F2; --surface: #FFFFFF; --ink: #1A1A2E; --ink2: #4A4A6A;
+          --accent: #B8621B; --accent2: #D4881C; --accent-soft: #FFF3E6;
+          --border: #E8E2D8; --green: #2D8F5E; --green-soft: #E8F5EE;
+          --blue: #2563EB; --blue-soft: #EFF6FF; --purple: #7C3AED; --purple-soft: #F3EEFF;
+          --red: #DC2626; --red-soft: #FEF2F2; --radius: 12px;
           --shadow: 0 1px 3px rgba(0,0,0,0.06), 0 4px 12px rgba(0,0,0,0.04);
           --font-display: 'DM Serif Display', Georgia, serif;
           --font-body: 'Plus Jakarta Sans', -apple-system, sans-serif;
         }
         html, body, #root { height: 100%; }
         body { background: var(--bg); font-family: var(--font-body); color: var(--ink); }
+        .app-shell { display: flex; flex-direction: column; height: 100vh; max-height: 100vh; overflow: hidden; background: var(--bg); }
 
-        .app-shell {
-          display: flex; flex-direction: column;
-          height: 100vh; max-height: 100vh; overflow: hidden;
-          background: var(--bg);
-        }
-
-        .header {
-          display: flex; align-items: center; gap: 14px;
-          padding: 16px 28px;
-          background: var(--surface);
-          border-bottom: 1px solid var(--border);
-          flex-shrink: 0;
-        }
-        .header-logo {
-          width: 44px; height: 44px; border-radius: 10px;
-          background: linear-gradient(135deg, var(--accent), var(--accent2));
-          display: flex; align-items: center; justify-content: center;
-          color: white; flex-shrink: 0;
-        }
-        .header h1 {
-          font-family: var(--font-display); font-size: 1.35rem;
-          font-weight: 400; color: var(--ink); line-height: 1.2;
-        }
+        .header { display: flex; align-items: center; gap: 14px; padding: 16px 28px; background: var(--surface); border-bottom: 1px solid var(--border); flex-shrink: 0; }
+        .header-logo { width: 44px; height: 44px; border-radius: 10px; background: linear-gradient(135deg, var(--accent), var(--accent2)); display: flex; align-items: center; justify-content: center; color: white; flex-shrink: 0; }
+        .header h1 { font-family: var(--font-display); font-size: 1.35rem; font-weight: 400; color: var(--ink); line-height: 1.2; }
         .header p { font-size: 0.78rem; color: var(--ink2); margin-top: 1px; }
         .header-actions { margin-left: auto; display: flex; gap: 8px; }
-        .btn-ghost {
-          padding: 8px 14px; border-radius: 8px;
-          border: 1px solid var(--border); background: var(--surface);
-          font-family: var(--font-body); font-size: 0.8rem;
-          color: var(--ink2); cursor: pointer; transition: all 0.15s;
-        }
+        .btn-ghost { padding: 8px 14px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); font-family: var(--font-body); font-size: 0.8rem; color: var(--ink2); cursor: pointer; transition: all 0.15s; }
         .btn-ghost:hover { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
 
         .main { flex: 1; overflow: hidden; display: flex; flex-direction: column; }
 
-        .input-phase {
-          flex: 1; display: flex; flex-direction: column;
-          align-items: center; justify-content: center;
-          padding: 32px 24px; overflow-y: auto;
-        }
+        .input-phase { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 32px 24px; overflow-y: auto; }
         .input-hero { text-align: center; max-width: 640px; margin-bottom: 28px; }
-        .input-hero h2 {
-          font-family: var(--font-display); font-size: 2rem;
-          font-weight: 400; color: var(--ink); margin-bottom: 10px;
-        }
+        .input-hero h2 { font-family: var(--font-display); font-size: 2rem; font-weight: 400; color: var(--ink); margin-bottom: 10px; }
         .input-hero p { color: var(--ink2); font-size: 0.92rem; line-height: 1.6; }
 
-        .input-card {
-          width: 100%; max-width: 720px;
-          background: var(--surface); border-radius: var(--radius);
-          border: 1px solid var(--border); box-shadow: var(--shadow);
-          overflow: hidden; transition: border-color 0.2s;
-        }
+        .input-card { width: 100%; max-width: 720px; background: var(--surface); border-radius: var(--radius); border: 1px solid var(--border); box-shadow: var(--shadow); overflow: hidden; transition: border-color 0.2s; }
         .input-card.drag-over { border-color: var(--accent); border-style: dashed; background: var(--accent-soft); }
-        .input-card textarea {
-          width: 100%; min-height: 180px; padding: 20px 22px;
-          border: none; outline: none; resize: vertical;
-          font-family: var(--font-body); font-size: 0.92rem;
-          line-height: 1.7; color: var(--ink); background: transparent;
-        }
+        .input-card textarea { width: 100%; min-height: 180px; padding: 20px 22px; border: none; outline: none; resize: vertical; font-family: var(--font-body); font-size: 0.92rem; line-height: 1.7; color: var(--ink); background: transparent; }
         .input-card textarea::placeholder { color: #B0A898; }
 
-        /* ── image preview ── */
-        .image-preview-bar {
-          display: flex; align-items: center; gap: 10px;
-          padding: 10px 18px; border-top: 1px solid var(--border);
-          background: var(--blue-soft);
-        }
-        .image-thumb {
-          width: 56px; height: 56px; border-radius: 8px;
-          object-fit: cover; border: 1px solid var(--border);
-        }
+        .image-preview-bar { display: flex; align-items: center; gap: 10px; padding: 10px 18px; border-top: 1px solid var(--border); background: var(--blue-soft); }
+        .image-thumb { width: 56px; height: 56px; border-radius: 8px; object-fit: cover; border: 1px solid var(--border); }
         .image-info { flex: 1; }
         .image-info .name { font-size: 0.82rem; font-weight: 600; color: var(--ink); }
         .image-info .hint { font-size: 0.72rem; color: var(--ink2); margin-top: 2px; }
-        .image-remove {
-          width: 28px; height: 28px; border-radius: 6px;
-          border: 1px solid var(--border); background: var(--surface);
-          cursor: pointer; display: flex; align-items: center; justify-content: center;
-          color: var(--red); transition: all 0.15s;
-        }
+        .image-remove { width: 28px; height: 28px; border-radius: 6px; border: 1px solid var(--border); background: var(--surface); cursor: pointer; display: flex; align-items: center; justify-content: center; color: var(--red); transition: all 0.15s; }
         .image-remove:hover { background: var(--red-soft); border-color: var(--red); }
 
-        .input-footer {
-          display: flex; align-items: center; justify-content: space-between;
-          padding: 12px 18px; border-top: 1px solid var(--border);
-          background: #FDFCFA; gap: 10px; flex-wrap: wrap;
-        }
+        .input-footer { display: flex; align-items: center; justify-content: space-between; padding: 12px 18px; border-top: 1px solid var(--border); background: #FDFCFA; gap: 10px; flex-wrap: wrap; }
         .footer-left { display: flex; align-items: center; gap: 10px; }
         .char-count { font-size: 0.75rem; color: var(--ink2); }
-        .btn-upload {
-          display: inline-flex; align-items: center; gap: 6px;
-          padding: 7px 14px; border-radius: 7px;
-          border: 1px solid var(--border); background: var(--surface);
-          font-family: var(--font-body); font-size: 0.78rem;
-          color: var(--ink2); cursor: pointer; transition: all 0.15s;
-        }
+        .btn-upload { display: inline-flex; align-items: center; gap: 6px; padding: 7px 14px; border-radius: 7px; border: 1px solid var(--border); background: var(--surface); font-family: var(--font-body); font-size: 0.78rem; color: var(--ink2); cursor: pointer; transition: all 0.15s; }
         .btn-upload:hover { border-color: var(--blue); color: var(--blue); background: var(--blue-soft); }
 
-        .btn-generate {
-          display: inline-flex; align-items: center; gap: 8px;
-          padding: 10px 22px; border-radius: 8px; border: none;
-          background: linear-gradient(135deg, var(--accent), var(--accent2));
-          color: white; font-family: var(--font-body); font-size: 0.88rem;
-          font-weight: 600; cursor: pointer; transition: all 0.2s;
-          box-shadow: 0 2px 8px rgba(184,98,27,0.25);
-        }
+        .btn-generate { display: inline-flex; align-items: center; gap: 8px; padding: 10px 22px; border-radius: 8px; border: none; background: linear-gradient(135deg, var(--accent), var(--accent2)); color: white; font-family: var(--font-body); font-size: 0.88rem; font-weight: 600; cursor: pointer; transition: all 0.2s; box-shadow: 0 2px 8px rgba(184,98,27,0.25); }
         .btn-generate:hover { transform: translateY(-1px); box-shadow: 0 4px 16px rgba(184,98,27,0.35); }
         .btn-generate:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
 
-        .features-row {
-          display: flex; gap: 10px; flex-wrap: wrap; justify-content: center;
-          max-width: 720px; margin-top: 24px;
-        }
-        .feature-chip {
-          display: flex; align-items: center; gap: 6px;
-          padding: 8px 16px; border-radius: 20px;
-          font-size: 0.8rem; font-weight: 600;
-          border: 2px solid transparent;
-          cursor: pointer; transition: all 0.2s;
-          font-family: var(--font-body);
-        }
+        .features-row { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; max-width: 720px; margin-top: 24px; }
+        .feature-chip { display: flex; align-items: center; gap: 6px; padding: 8px 16px; border-radius: 20px; font-size: 0.8rem; font-weight: 600; border: 2px solid transparent; cursor: pointer; transition: all 0.2s; font-family: var(--font-body); }
         .feature-chip:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
         .feature-chip:active { transform: scale(0.97); }
         .feature-chip:disabled { opacity: 0.5; cursor: not-allowed; transform: none; box-shadow: none; }
@@ -467,59 +447,24 @@ export default function EduPromptApp() {
         .fc-4 { background: var(--purple-soft); color: var(--purple); }
         .fc-4:hover { border-color: var(--purple); }
 
-        .num-controls-row {
-          display: flex; gap: 14px; flex-wrap: wrap; justify-content: center;
-          max-width: 720px; margin-top: 16px;
-        }
-        .num-control {
-          display: flex; align-items: center; gap: 8px;
-          background: var(--surface); border: 1px solid var(--border);
-          border-radius: 10px; padding: 6px 14px;
-          font-family: var(--font-body); transition: border-color 0.2s;
-        }
+        .num-controls-row { display: flex; gap: 14px; flex-wrap: wrap; justify-content: center; max-width: 720px; margin-top: 16px; }
+        .num-control { display: flex; align-items: center; gap: 8px; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 6px 14px; font-family: var(--font-body); transition: border-color 0.2s; }
         .num-control:hover { border-color: var(--accent); }
         .num-label { font-size: 0.78rem; color: var(--ink2); font-weight: 500; white-space: nowrap; }
-        .num-btn {
-          width: 28px; height: 28px; border-radius: 6px;
-          border: 1px solid var(--border); background: var(--bg);
-          cursor: pointer; font-size: 1rem; color: var(--ink2);
-          display: flex; align-items: center; justify-content: center;
-          font-family: var(--font-body); transition: all 0.15s; line-height: 1;
-        }
+        .num-btn { width: 28px; height: 28px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg); cursor: pointer; font-size: 1rem; color: var(--ink2); display: flex; align-items: center; justify-content: center; font-family: var(--font-body); transition: all 0.15s; line-height: 1; }
         .num-btn:hover { background: var(--accent); color: white; border-color: var(--accent); }
         .num-btn:active { transform: scale(0.9); }
-        .num-value {
-          min-width: 28px; text-align: center; font-size: 1.05rem;
-          font-weight: 700; color: var(--ink);
-          font-family: var(--font-display);
-        }
+        .num-value { min-width: 28px; text-align: center; font-size: 1.05rem; font-weight: 700; color: var(--ink); font-family: var(--font-display); }
 
         .result-phase { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
-        .result-toolbar {
-          display: flex; align-items: center; gap: 8px;
-          padding: 10px 24px; border-bottom: 1px solid var(--border);
-          background: var(--surface); flex-shrink: 0; flex-wrap: wrap;
-        }
-        .result-toolbar .label {
-          font-size: 0.78rem; font-weight: 600; color: var(--ink2);
-          text-transform: uppercase; letter-spacing: 0.05em; margin-right: 6px;
-        }
-        .opt-btn {
-          padding: 7px 14px; border-radius: 7px; border: 1px solid var(--border);
-          background: var(--surface); font-family: var(--font-body);
-          font-size: 0.78rem; color: var(--ink); cursor: pointer;
-          transition: all 0.15s; white-space: nowrap;
-        }
+        .result-toolbar { display: flex; align-items: center; gap: 8px; padding: 10px 24px; border-bottom: 1px solid var(--border); background: var(--surface); flex-shrink: 0; flex-wrap: wrap; }
+        .result-toolbar .label { font-size: 0.78rem; font-weight: 600; color: var(--ink2); text-transform: uppercase; letter-spacing: 0.05em; margin-right: 6px; }
+        .opt-btn { padding: 7px 14px; border-radius: 7px; border: 1px solid var(--border); background: var(--surface); font-family: var(--font-body); font-size: 0.78rem; color: var(--ink); cursor: pointer; transition: all 0.15s; white-space: nowrap; }
         .opt-btn:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
         .opt-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
         .result-scroll { flex: 1; overflow-y: auto; padding: 28px 24px; }
-        .result-content {
-          max-width: 780px; margin: 0 auto;
-          background: var(--surface); border-radius: var(--radius);
-          border: 1px solid var(--border); box-shadow: var(--shadow);
-          padding: 32px 36px; text-align: left;
-        }
+        .result-content { max-width: 780px; margin: 0 auto; background: var(--surface); border-radius: var(--radius); border: 1px solid var(--border); box-shadow: var(--shadow); padding: 32px 36px; text-align: left; }
         .result-content h1 { font-family: var(--font-display); font-size: 1.5rem; color: var(--accent); margin: 28px 0 12px; font-weight: 400; text-align: left; }
         .result-content h2 { font-family: var(--font-display); font-size: 1.25rem; color: var(--accent); margin: 24px 0 10px; font-weight: 400; text-align: left; }
         .result-content h3 { font-family: var(--font-display); font-size: 1.1rem; color: var(--ink); margin: 20px 0 8px; font-weight: 400; text-align: left; }
@@ -530,8 +475,8 @@ export default function EduPromptApp() {
         .result-content li { font-size: 0.9rem; line-height: 1.7; color: var(--ink); margin-bottom: 4px; text-align: left; }
         .result-content hr { border: none; border-top: 1px solid var(--border); margin: 20px 0; }
 
-        .copy-bar { display: flex; justify-content: flex-end; gap: 8px; margin-bottom: 16px; }
-        .btn-copy {
+        .copy-bar { display: flex; align-items: center; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
+        .btn-copy, .btn-download {
           display: inline-flex; align-items: center; gap: 6px;
           padding: 7px 14px; border-radius: 7px; border: 1px solid var(--border);
           background: var(--surface); font-family: var(--font-body);
@@ -539,36 +484,19 @@ export default function EduPromptApp() {
         }
         .btn-copy:hover { border-color: var(--green); color: var(--green); }
         .btn-copy.copied { border-color: var(--green); color: var(--green); background: var(--green-soft); }
+        .btn-download:hover { border-color: var(--blue); color: var(--blue); background: var(--blue-soft); }
 
-        .generated-label {
-          display: inline-flex; align-items: center; gap: 6px;
-          padding: 5px 12px; border-radius: 6px; font-size: 0.72rem; font-weight: 600; margin-bottom: 16px;
-        }
+        .generated-label { display: inline-flex; align-items: center; gap: 6px; padding: 5px 12px; border-radius: 6px; font-size: 0.72rem; font-weight: 600; }
 
-        .loading-overlay {
-          flex: 1; display: flex; flex-direction: column;
-          align-items: center; justify-content: center; gap: 18px; padding: 40px;
-        }
-        .spinner-ring {
-          width: 56px; height: 56px; border-radius: 50%;
-          border: 3px solid var(--border); border-top-color: var(--accent);
-          animation: spin 0.9s linear infinite;
-        }
+        .loading-overlay { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px; padding: 40px; }
+        .spinner-ring { width: 56px; height: 56px; border-radius: 50%; border: 3px solid var(--border); border-top-color: var(--accent); animation: spin 0.9s linear infinite; }
         @keyframes spin { to { transform: rotate(360deg); } }
         .loading-text { font-size: 0.95rem; color: var(--ink2); animation: pulse 2s ease-in-out infinite; }
         @keyframes pulse { 0%,100% { opacity: 0.6; } 50% { opacity: 1; } }
 
-        .error-box {
-          max-width: 500px; margin: 24px auto; padding: 16px 20px;
-          background: var(--red-soft); border: 1px solid #FCA5A5;
-          border-radius: var(--radius); color: var(--red);
-          font-size: 0.88rem; text-align: center;
-        }
+        .error-box { max-width: 500px; margin: 24px auto; padding: 16px 20px; background: var(--red-soft); border: 1px solid #FCA5A5; border-radius: var(--radius); color: var(--red); font-size: 0.88rem; text-align: center; }
 
-        .drop-hint {
-          display: flex; flex-direction: column; align-items: center; justify-content: center;
-          padding: 40px 20px; color: var(--accent); gap: 8px;
-        }
+        .drop-hint { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 40px 20px; color: var(--accent); gap: 8px; }
         .drop-hint-text { font-size: 0.95rem; font-weight: 600; }
         .drop-hint-sub { font-size: 0.78rem; color: var(--ink2); }
 
@@ -610,8 +538,7 @@ export default function EduPromptApp() {
           {error && !loading && (
             <div style={{ padding: "20px" }}>
               <div className="error-box">
-                ⚠ {error}
-                <br /><br />
+                ⚠ {error}<br /><br />
                 <button className="btn-ghost" onClick={() => setError("")}>Încearcă din nou</button>
               </div>
             </div>
@@ -641,14 +568,12 @@ export default function EduPromptApp() {
                   </div>
                 ) : (
                   <textarea
-                    ref={textareaRef}
                     value={inputText}
                     onChange={e => setInputText(e.target.value)}
                     placeholder={'Lipește aici textul lecției, sau trage/lipește o imagine (Ctrl+V)...\n\nExemplu: Revoluția Industrială a reprezentat o perioadă de transformare majoră în Europa, începând cu a doua jumătate a secolului al XVIII-lea...'}
                   />
                 )}
 
-                {/* Image preview */}
                 {imageData && (
                   <div className="image-preview-bar">
                     <img src={imageData.preview} alt="Preview" className="image-thumb" />
@@ -665,25 +590,13 @@ export default function EduPromptApp() {
                 <div className="input-footer">
                   <div className="footer-left">
                     <span className="char-count">{inputText.length} caractere</span>
-                    <input
-                      ref={fileInputRef}
-                      type="file"
-                      accept="image/*"
-                      style={{ display: "none" }}
-                      onChange={(e) => {
-                        if (e.target.files?.[0]) processImage(e.target.files[0]);
-                        e.target.value = "";
-                      }}
-                    />
+                    <input ref={fileInputRef} type="file" accept="image/*" style={{ display: "none" }}
+                      onChange={(e) => { if (e.target.files?.[0]) processImage(e.target.files[0]); e.target.value = ""; }} />
                     <button className="btn-upload" onClick={() => fileInputRef.current?.click()}>
                       <ImageIcon /> {imageData ? "Schimbă imaginea" : "Adaugă imagine"}
                     </button>
                   </div>
-                  <button
-                    className="btn-generate"
-                    onClick={handleGenerate}
-                    disabled={!hasInput || loading}
-                  >
+                  <button className="btn-generate" onClick={handleGenerate} disabled={!hasInput || loading}>
                     <SparkleIcon /> Generează toate materialele
                   </button>
                 </div>
@@ -725,18 +638,10 @@ export default function EduPromptApp() {
             <div className="result-phase">
               <div className="result-toolbar">
                 <span className="label">Opțiuni:</span>
-                <button className="opt-btn" onClick={() => handleOption(1)} disabled={loading}>
-                  🎯 Adaptează pe niveluri
-                </button>
-                <button className="opt-btn" onClick={() => handleOption(2)} disabled={loading}>
-                  ⏱ Mini-test 10 min cu barem
-                </button>
-                <button className="opt-btn" onClick={() => handleOption(3)} disabled={loading}>
-                  💡 Feedback îmbunătățiri
-                </button>
-                <button className="opt-btn" onClick={() => handleOption(4)} disabled={loading}>
-                  📋 Fișă nouă, altă temă
-                </button>
+                <button className="opt-btn" onClick={() => handleOption(1)} disabled={loading}>🎯 Adaptează pe niveluri</button>
+                <button className="opt-btn" onClick={() => handleOption(2)} disabled={loading}>⏱ Mini-test 10 min cu barem</button>
+                <button className="opt-btn" onClick={() => handleOption(3)} disabled={loading}>💡 Feedback îmbunătățiri</button>
+                <button className="opt-btn" onClick={() => handleOption(4)} disabled={loading}>📋 Fișă nouă, altă temă</button>
               </div>
 
               <div className="result-scroll" ref={resultRef}>
@@ -744,8 +649,7 @@ export default function EduPromptApp() {
                   <div className="copy-bar">
                     {activeChip && (
                       <span className={`generated-label ${
-                        activeChip === "rezumat" ? "fc-1" :
-                        activeChip === "grila" ? "fc-2" :
+                        activeChip === "rezumat" ? "fc-1" : activeChip === "grila" ? "fc-2" :
                         activeChip === "analiza" ? "fc-3" : "fc-4"
                       }`}>
                         {activeChip === "rezumat" && "📝 Rezumat & Întrebări"}
@@ -755,6 +659,9 @@ export default function EduPromptApp() {
                       </span>
                     )}
                     <div style={{ flex: 1 }} />
+                    <button className="btn-download" onClick={() => downloadAsDocx(result)}>
+                      <DownloadIcon /> Descarcă DOC
+                    </button>
                     <button className={`btn-copy${copied ? " copied" : ""}`} onClick={handleCopy}>
                       {copied ? <><CheckIcon /> Copiat!</> : <><CopyIcon /> Copiază tot</>}
                     </button>
