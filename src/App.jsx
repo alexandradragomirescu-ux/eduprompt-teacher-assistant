@@ -45,7 +45,10 @@ export default function App() {
   const [usedBooks, setUsedBooks] = useState([]);
   const [books, setBooks] = useState([]);
   const [uploadingPdf, setUploadingPdf] = useState(false);
+  const [pdfError, setPdfError] = useState("");
   const pdfInputRef = useRef(null);
+
+  const MAX_PDF_SIZE = 4.5 * 1024 * 1024;
 
   const buildBooksContext = useCallback(() => {
     const textBooks = books.filter(b => !b.isPdf);
@@ -102,7 +105,7 @@ export default function App() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           model: "claude-sonnet-4-20250514",
-          max_tokens: 4000,
+          max_tokens: 1000,
           system: systemPrompt,
           messages: [
             { role: "user", content: messageContent }
@@ -125,7 +128,14 @@ export default function App() {
       }
     } catch (err) {
       const errorMsg = err.message || "Eroare necunoscută";
-      setResults(prev => ({ ...prev, [type === "all" ? "sinteza" : type]: `⚠️ Eroare la generare: ${errorMsg}\n\nÎncearcă din nou sau verifică dacă PDF-ul nu e prea mare.` }));
+      const totalPdfSize = books.filter(b => b.isPdf).reduce((s, b) => s + b.fileSize, 0);
+      let hint = "Încearcă din nou.";
+      if (errorMsg.includes("fetch") && totalPdfSize > 2 * 1024 * 1024) {
+        hint = "PDF-ul pare prea mare pentru a fi procesat. Încearcă cu un PDF mai mic (max ~30 pagini) sau extrage doar capitolul relevant.";
+      } else if (errorMsg.includes("fetch")) {
+        hint = "Verifică conexiunea la internet și încearcă din nou.";
+      }
+      setResults(prev => ({ ...prev, [type === "all" ? "sinteza" : type]: `⚠️ Eroare la generare: ${errorMsg}\n\n${hint}` }));
       if (type === "all") setActiveTab("sinteza");
     } finally {
       setLoading(false);
@@ -135,6 +145,13 @@ export default function App() {
 
   const processPdfFile = (file) => {
     if (!file || file.type !== "application/pdf") return;
+    setPdfError("");
+
+    if (file.size > MAX_PDF_SIZE) {
+      setPdfError(`PDF-ul „${file.name}" are ${(file.size / 1024 / 1024).toFixed(1)} MB — limita este 4.5 MB. Folosește un PDF mai mic sau extrage doar capitolul relevant.`);
+      return;
+    }
+
     setUploadingPdf(true);
     const reader = new FileReader();
     reader.onload = () => {
@@ -151,7 +168,10 @@ export default function App() {
       }]);
       setUploadingPdf(false);
     };
-    reader.onerror = () => setUploadingPdf(false);
+    reader.onerror = () => {
+      setUploadingPdf(false);
+      setPdfError("Eroare la citirea fișierului. Încearcă din nou.");
+    };
     reader.readAsDataURL(file);
   };
 
@@ -406,6 +426,29 @@ export default function App() {
                   >×</span>
                 </span>
               ))}
+            </div>
+          )}
+          {/* PDF error */}
+          {pdfError && (
+            <div style={{
+              padding: "10px 20px 12px",
+              borderTop: books.length > 0 ? "none" : "1px solid #f0ebe0",
+              display: "flex", alignItems: "center", gap: 8,
+              fontFamily: "'Source Sans 3', sans-serif",
+            }}>
+              <div style={{
+                background: "rgba(200,50,50,0.06)",
+                border: "1px solid rgba(200,50,50,0.15)",
+                borderRadius: 8, padding: "8px 14px",
+                fontSize: 12.5, color: "#a03030",
+                lineHeight: 1.5, flex: 1,
+              }}>
+                ⚠️ {pdfError}
+              </div>
+              <span
+                onClick={() => setPdfError("")}
+                style={{ cursor: "pointer", color: "#aaa", fontSize: 16 }}
+              >×</span>
             </div>
           )}
         </div>
