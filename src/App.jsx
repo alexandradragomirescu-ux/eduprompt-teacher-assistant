@@ -1,8 +1,10 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 
 const SYSTEM_PROMPT = `Rolul tău: Ești un asistent specializat în educație și formare, care ajută profesorii și formatorii să creeze rapid materiale didactice de calitate. Numele tău este EduPrompt Teacher Assistant.
 
-Scopul aplicației: Primești de la utilizator un text educațional (lecție, fragment din programă, suport de curs) și generezi automat resurse complete pentru predare și evaluare.
+Scopul aplicației: Primești de la utilizator un text educațional (lecție, fragment din programă, suport de curs) SAU o imagine cu textul lecției și generezi automat resurse complete pentru predare și evaluare.
+
+Dacă primești o imagine, mai întâi transcrie/extrage conținutul educațional din imagine, apoi generează materialele.
 
 Instrucțiuni generale: Pentru fiecare material primit, vei genera întotdeauna următoarele, într-un format clar, structurat și ușor de copiat:
 
@@ -15,16 +17,16 @@ Instrucțiuni generale: Pentru fiecare material primit, vei genera întotdeauna 
 
 La finalul răspunsului, adaugă o scurtă evaluare a eficienței procesului (timp estimat economisit, calitate, observații).
 
-Formatează răspunsul folosind Markdown clar, cu headere, liste numerotate și bold pentru secțiuni. Fii detaliat și profesionist.`;
+Formatează răspunsul folosind Markdown clar, cu headere, liste numerotate și bold pentru secțiuni. Fii detaliat și profesionist. Răspunde DOAR în limba română.`;
 
 const FOCUSED_PROMPTS = {
-  rezumat: `Ești un profesor expert. Generează DOAR următoarele pentru textul primit:
+  rezumat: `Ești un profesor expert. Dacă primești o imagine, mai întâi extrage conținutul educațional din ea. Apoi generează DOAR:
 1. **Rezumatul lecției** – concis, 5–7 rânduri
 2. **5 întrebări de verificare a înțelegerii** – întrebări deschise, cu răspunsuri așteptate
 
 Formatează răspunsul folosind Markdown clar. Răspunde DOAR în limba română.`,
 
-  grila: (num) => `Ești un profesor expert. Generează EXACT ${num} ITEMI GRILĂ pentru textul primit.
+  grila: (num) => `Ești un profesor expert. Dacă primești o imagine, mai întâi extrage conținutul educațional din ea. Apoi generează EXACT ${num} ITEMI GRILĂ.
 
 Fiecare item trebuie să aibă:
 - Întrebarea
@@ -33,7 +35,7 @@ Fiecare item trebuie să aibă:
 
 Formatează răspunsul folosind Markdown clar. Răspunde DOAR în limba română.`,
 
-  analiza: (num) => `Ești un profesor expert. Generează EXACT ${num} EXERCIȚII DE ANALIZĂ complexe pentru textul primit.
+  analiza: (num) => `Ești un profesor expert. Dacă primești o imagine, mai întâi extrage conținutul educațional din ea. Apoi generează EXACT ${num} EXERCIȚII DE ANALIZĂ complexe.
 
 Exercițiile trebuie să solicite gândire critică, aplicare sau interpretare. Include exerciții variate: comparație, argumentare, sinteză, evaluare.
 
@@ -44,7 +46,7 @@ Pentru fiecare exercițiu include:
 
 Formatează răspunsul folosind Markdown clar. Răspunde DOAR în limba română.`,
 
-  fise: `Ești un profesor expert. Generează DOAR FIȘE DE LUCRU DIFERENȚIATE pe 3 niveluri pentru textul primit:
+  fise: `Ești un profesor expert. Dacă primești o imagine, mai întâi extrage conținutul educațional din ea. Apoi generează DOAR FIȘE DE LUCRU DIFERENȚIATE pe 3 niveluri:
 
 1. **Nivel de bază** (pentru elevii care au nevoie de sprijin suplimentar) – exerciții simple, cu suport
 2. **Nivel mediu** (pentru majoritatea elevilor) – exerciții moderate
@@ -105,6 +107,16 @@ const CheckIcon = () => (
     <polyline points="20 6 9 17 4 12"/>
   </svg>
 );
+const ImageIcon = () => (
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/>
+  </svg>
+);
+const XIcon = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+    <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+  </svg>
+);
 
 const FONTS_URL = "https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap";
 
@@ -120,7 +132,11 @@ export default function EduPromptApp() {
   const [activeChip, setActiveChip] = useState(null);
   const [numGrila, setNumGrila] = useState(5);
   const [numAnaliza, setNumAnaliza] = useState(3);
+  const [imageData, setImageData] = useState(null); // { base64, mediaType, preview }
+  const [dragOver, setDragOver] = useState(false);
   const resultRef = useRef(null);
+  const fileInputRef = useRef(null);
+  const textareaRef = useRef(null);
 
   const loadingMessages = [
     "Analizez conținutul lecției...",
@@ -136,6 +152,58 @@ export default function EduPromptApp() {
     const iv = setInterval(() => setLoadingMsg(p => (p + 1) % loadingMessages.length), 2800);
     return () => clearInterval(iv);
   }, [loading]);
+
+  // Process image file into base64
+  const processImage = useCallback((file) => {
+    if (!file || !file.type.startsWith("image/")) return;
+    if (file.size > 20 * 1024 * 1024) {
+      setError("Imaginea este prea mare. Limita este 20MB.");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const dataUrl = e.target.result;
+      const base64 = dataUrl.split(",")[1];
+      const mediaType = file.type;
+      setImageData({ base64, mediaType, preview: dataUrl, name: file.name });
+    };
+    reader.readAsDataURL(file);
+  }, []);
+
+  // Handle paste (Ctrl+V image)
+  useEffect(() => {
+    const handlePaste = (e) => {
+      if (phase !== "input") return;
+      const items = e.clipboardData?.items;
+      if (!items) return;
+      for (const item of items) {
+        if (item.type.startsWith("image/")) {
+          e.preventDefault();
+          processImage(item.getAsFile());
+          return;
+        }
+      }
+    };
+    document.addEventListener("paste", handlePaste);
+    return () => document.removeEventListener("paste", handlePaste);
+  }, [phase, processImage]);
+
+  // Build message content (text only, image only, or both)
+  function buildUserContent(promptText) {
+    const parts = [];
+    if (imageData) {
+      parts.push({
+        type: "image",
+        source: {
+          type: "base64",
+          media_type: imageData.mediaType,
+          data: imageData.base64
+        }
+      });
+    }
+    parts.push({ type: "text", text: promptText });
+    return parts;
+  }
 
   async function callAPI(userContent, systemPrompt, history = []) {
     setLoading(true);
@@ -169,13 +237,17 @@ export default function EduPromptApp() {
   }
 
   function handleGenerate() {
-    if (!inputText.trim()) return;
+    if (!inputText.trim() && !imageData) return;
     setActiveChip(null);
-    callAPI(`Iată textul lecției pe care doresc să-l prelucrezi:\n\n${inputText}`, SYSTEM_PROMPT);
+    const prompt = inputText.trim()
+      ? `Iată textul lecției pe care doresc să-l prelucrezi:\n\n${inputText}`
+      : "Analizează imaginea atașată care conține textul lecției și generează materialele didactice.";
+    const content = buildUserContent(prompt);
+    callAPI(content, SYSTEM_PROMPT);
   }
 
   function handleFocusedGenerate(type) {
-    if (!inputText.trim()) return;
+    if (!inputText.trim() && !imageData) return;
     setActiveChip(type);
     let systemPrompt;
     if (type === "grila") {
@@ -185,7 +257,11 @@ export default function EduPromptApp() {
     } else {
       systemPrompt = FOCUSED_PROMPTS[type];
     }
-    callAPI(`Iată textul lecției:\n\n${inputText}`, systemPrompt);
+    const prompt = inputText.trim()
+      ? `Iată textul lecției:\n\n${inputText}`
+      : "Analizează imaginea atașată care conține textul lecției.";
+    const content = buildUserContent(prompt);
+    callAPI(content, systemPrompt);
   }
 
   function handleOption(opt) {
@@ -206,7 +282,26 @@ export default function EduPromptApp() {
     setInputText("");
     setError("");
     setActiveChip(null);
+    setImageData(null);
   }
+
+  // Drag & drop handlers
+  function handleDragOver(e) {
+    e.preventDefault();
+    setDragOver(true);
+  }
+  function handleDragLeave(e) {
+    e.preventDefault();
+    setDragOver(false);
+  }
+  function handleDrop(e) {
+    e.preventDefault();
+    setDragOver(false);
+    const file = e.dataTransfer?.files?.[0];
+    if (file) processImage(file);
+  }
+
+  const hasInput = inputText.trim() || imageData;
 
   return (
     <>
@@ -232,7 +327,6 @@ export default function EduPromptApp() {
           --red-soft: #FEF2F2;
           --radius: 12px;
           --shadow: 0 1px 3px rgba(0,0,0,0.06), 0 4px 12px rgba(0,0,0,0.04);
-          --shadow-lg: 0 4px 20px rgba(0,0,0,0.08), 0 8px 32px rgba(0,0,0,0.04);
           --font-display: 'DM Serif Display', Georgia, serif;
           --font-body: 'Plus Jakarta Sans', -apple-system, sans-serif;
         }
@@ -245,7 +339,6 @@ export default function EduPromptApp() {
           background: var(--bg);
         }
 
-        /* ── header ── */
         .header {
           display: flex; align-items: center; gap: 14px;
           padding: 16px 28px;
@@ -263,9 +356,7 @@ export default function EduPromptApp() {
           font-family: var(--font-display); font-size: 1.35rem;
           font-weight: 400; color: var(--ink); line-height: 1.2;
         }
-        .header p {
-          font-size: 0.78rem; color: var(--ink2); margin-top: 1px;
-        }
+        .header p { font-size: 0.78rem; color: var(--ink2); margin-top: 1px; }
         .header-actions { margin-left: auto; display: flex; gap: 8px; }
         .btn-ghost {
           padding: 8px 14px; border-radius: 8px;
@@ -275,42 +366,72 @@ export default function EduPromptApp() {
         }
         .btn-ghost:hover { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
 
-        /* ── main area ── */
         .main { flex: 1; overflow: hidden; display: flex; flex-direction: column; }
 
-        /* ── INPUT PHASE ── */
         .input-phase {
           flex: 1; display: flex; flex-direction: column;
           align-items: center; justify-content: center;
           padding: 32px 24px; overflow-y: auto;
         }
-        .input-hero {
-          text-align: center; max-width: 640px; margin-bottom: 28px;
-        }
+        .input-hero { text-align: center; max-width: 640px; margin-bottom: 28px; }
         .input-hero h2 {
           font-family: var(--font-display); font-size: 2rem;
           font-weight: 400; color: var(--ink); margin-bottom: 10px;
         }
         .input-hero p { color: var(--ink2); font-size: 0.92rem; line-height: 1.6; }
+
         .input-card {
           width: 100%; max-width: 720px;
           background: var(--surface); border-radius: var(--radius);
           border: 1px solid var(--border); box-shadow: var(--shadow);
-          overflow: hidden;
+          overflow: hidden; transition: border-color 0.2s;
         }
+        .input-card.drag-over { border-color: var(--accent); border-style: dashed; background: var(--accent-soft); }
         .input-card textarea {
-          width: 100%; min-height: 220px; padding: 20px 22px;
+          width: 100%; min-height: 180px; padding: 20px 22px;
           border: none; outline: none; resize: vertical;
           font-family: var(--font-body); font-size: 0.92rem;
           line-height: 1.7; color: var(--ink); background: transparent;
         }
         .input-card textarea::placeholder { color: #B0A898; }
+
+        /* ── image preview ── */
+        .image-preview-bar {
+          display: flex; align-items: center; gap: 10px;
+          padding: 10px 18px; border-top: 1px solid var(--border);
+          background: var(--blue-soft);
+        }
+        .image-thumb {
+          width: 56px; height: 56px; border-radius: 8px;
+          object-fit: cover; border: 1px solid var(--border);
+        }
+        .image-info { flex: 1; }
+        .image-info .name { font-size: 0.82rem; font-weight: 600; color: var(--ink); }
+        .image-info .hint { font-size: 0.72rem; color: var(--ink2); margin-top: 2px; }
+        .image-remove {
+          width: 28px; height: 28px; border-radius: 6px;
+          border: 1px solid var(--border); background: var(--surface);
+          cursor: pointer; display: flex; align-items: center; justify-content: center;
+          color: var(--red); transition: all 0.15s;
+        }
+        .image-remove:hover { background: var(--red-soft); border-color: var(--red); }
+
         .input-footer {
           display: flex; align-items: center; justify-content: space-between;
           padding: 12px 18px; border-top: 1px solid var(--border);
-          background: #FDFCFA;
+          background: #FDFCFA; gap: 10px; flex-wrap: wrap;
         }
+        .footer-left { display: flex; align-items: center; gap: 10px; }
         .char-count { font-size: 0.75rem; color: var(--ink2); }
+        .btn-upload {
+          display: inline-flex; align-items: center; gap: 6px;
+          padding: 7px 14px; border-radius: 7px;
+          border: 1px solid var(--border); background: var(--surface);
+          font-family: var(--font-body); font-size: 0.78rem;
+          color: var(--ink2); cursor: pointer; transition: all 0.15s;
+        }
+        .btn-upload:hover { border-color: var(--blue); color: var(--blue); background: var(--blue-soft); }
+
         .btn-generate {
           display: inline-flex; align-items: center; gap: 8px;
           padding: 10px 22px; border-radius: 8px; border: none;
@@ -322,7 +443,6 @@ export default function EduPromptApp() {
         .btn-generate:hover { transform: translateY(-1px); box-shadow: 0 4px 16px rgba(184,98,27,0.35); }
         .btn-generate:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
 
-        /* ── feature chips (now buttons) ── */
         .features-row {
           display: flex; gap: 10px; flex-wrap: wrap; justify-content: center;
           max-width: 720px; margin-top: 24px;
@@ -335,10 +455,7 @@ export default function EduPromptApp() {
           cursor: pointer; transition: all 0.2s;
           font-family: var(--font-body);
         }
-        .feature-chip:hover {
-          transform: translateY(-2px);
-          box-shadow: 0 4px 12px rgba(0,0,0,0.1);
-        }
+        .feature-chip:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
         .feature-chip:active { transform: scale(0.97); }
         .feature-chip:disabled { opacity: 0.5; cursor: not-allowed; transform: none; box-shadow: none; }
         .fc-1 { background: var(--accent-soft); color: var(--accent); }
@@ -350,7 +467,6 @@ export default function EduPromptApp() {
         .fc-4 { background: var(--purple-soft); color: var(--purple); }
         .fc-4:hover { border-color: var(--purple); }
 
-        /* ── number controls ── */
         .num-controls-row {
           display: flex; gap: 14px; flex-wrap: wrap; justify-content: center;
           max-width: 720px; margin-top: 16px;
@@ -378,10 +494,7 @@ export default function EduPromptApp() {
           font-family: var(--font-display);
         }
 
-        /* ── RESULT PHASE ── */
-        .result-phase {
-          flex: 1; display: flex; flex-direction: column; overflow: hidden;
-        }
+        .result-phase { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
         .result-toolbar {
           display: flex; align-items: center; gap: 8px;
           padding: 10px 24px; border-bottom: 1px solid var(--border);
@@ -400,9 +513,7 @@ export default function EduPromptApp() {
         .opt-btn:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
         .opt-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
-        .result-scroll {
-          flex: 1; overflow-y: auto; padding: 28px 24px;
-        }
+        .result-scroll { flex: 1; overflow-y: auto; padding: 28px 24px; }
         .result-content {
           max-width: 780px; margin: 0 auto;
           background: var(--surface); border-radius: var(--radius);
@@ -419,46 +530,34 @@ export default function EduPromptApp() {
         .result-content li { font-size: 0.9rem; line-height: 1.7; color: var(--ink); margin-bottom: 4px; text-align: left; }
         .result-content hr { border: none; border-top: 1px solid var(--border); margin: 20px 0; }
 
-        .copy-bar {
-          display: flex; justify-content: flex-end; gap: 8px;
-          margin-bottom: 16px;
-        }
+        .copy-bar { display: flex; justify-content: flex-end; gap: 8px; margin-bottom: 16px; }
         .btn-copy {
           display: inline-flex; align-items: center; gap: 6px;
           padding: 7px 14px; border-radius: 7px; border: 1px solid var(--border);
           background: var(--surface); font-family: var(--font-body);
-          font-size: 0.78rem; cursor: pointer; transition: all 0.15s;
-          color: var(--ink2);
+          font-size: 0.78rem; cursor: pointer; transition: all 0.15s; color: var(--ink2);
         }
         .btn-copy:hover { border-color: var(--green); color: var(--green); }
         .btn-copy.copied { border-color: var(--green); color: var(--green); background: var(--green-soft); }
 
         .generated-label {
           display: inline-flex; align-items: center; gap: 6px;
-          padding: 5px 12px; border-radius: 6px; font-size: 0.72rem;
-          font-weight: 600; margin-bottom: 16px;
+          padding: 5px 12px; border-radius: 6px; font-size: 0.72rem; font-weight: 600; margin-bottom: 16px;
         }
 
-        /* ── loading overlay ── */
         .loading-overlay {
           flex: 1; display: flex; flex-direction: column;
-          align-items: center; justify-content: center; gap: 18px;
-          padding: 40px;
+          align-items: center; justify-content: center; gap: 18px; padding: 40px;
         }
         .spinner-ring {
           width: 56px; height: 56px; border-radius: 50%;
-          border: 3px solid var(--border);
-          border-top-color: var(--accent);
+          border: 3px solid var(--border); border-top-color: var(--accent);
           animation: spin 0.9s linear infinite;
         }
         @keyframes spin { to { transform: rotate(360deg); } }
-        .loading-text {
-          font-size: 0.95rem; color: var(--ink2);
-          animation: pulse 2s ease-in-out infinite;
-        }
+        .loading-text { font-size: 0.95rem; color: var(--ink2); animation: pulse 2s ease-in-out infinite; }
         @keyframes pulse { 0%,100% { opacity: 0.6; } 50% { opacity: 1; } }
 
-        /* ── error ── */
         .error-box {
           max-width: 500px; margin: 24px auto; padding: 16px 20px;
           background: var(--red-soft); border: 1px solid #FCA5A5;
@@ -466,7 +565,13 @@ export default function EduPromptApp() {
           font-size: 0.88rem; text-align: center;
         }
 
-        /* ── responsive ── */
+        .drop-hint {
+          display: flex; flex-direction: column; align-items: center; justify-content: center;
+          padding: 40px 20px; color: var(--accent); gap: 8px;
+        }
+        .drop-hint-text { font-size: 0.95rem; font-weight: 600; }
+        .drop-hint-sub { font-size: 0.78rem; color: var(--ink2); }
+
         @media (max-width: 600px) {
           .header { padding: 12px 16px; }
           .header h1 { font-size: 1.1rem; }
@@ -481,7 +586,6 @@ export default function EduPromptApp() {
       `}</style>
 
       <div className="app-shell">
-        {/* HEADER */}
         <header className="header">
           <div className="header-logo"><BookIcon /></div>
           <div>
@@ -496,7 +600,6 @@ export default function EduPromptApp() {
         </header>
 
         <div className="main">
-          {/* ── LOADING ── */}
           {loading && (
             <div className="loading-overlay">
               <div className="spinner-ring" />
@@ -504,7 +607,6 @@ export default function EduPromptApp() {
             </div>
           )}
 
-          {/* ── ERROR ── */}
           {error && !loading && (
             <div style={{ padding: "20px" }}>
               <div className="error-box">
@@ -515,36 +617,78 @@ export default function EduPromptApp() {
             </div>
           )}
 
-          {/* ── INPUT PHASE ── */}
           {phase === "input" && !loading && !error && (
             <div className="input-phase">
               <div className="input-hero">
                 <h2>Transformă orice lecție în resurse complete</h2>
                 <p>
-                  Introdu textul educațional și voi genera automat: rezumat, întrebări de verificare,
-                  itemi grilă, exerciții de analiză, fișe de lucru diferențiate și temă pentru acasă.
+                  Introdu textul educațional sau încarcă o imagine cu lecția. Voi genera automat:
+                  rezumat, întrebări, itemi grilă, exerciții de analiză și fișe diferențiate.
                 </p>
               </div>
 
-              <div className="input-card">
-                <textarea
-                  value={inputText}
-                  onChange={e => setInputText(e.target.value)}
-                  placeholder={'Lipeste aici textul lectiei, fragmentul din programa sau suportul de curs...\n\nExemplu: Revolutia Industriala a reprezentat o perioada de transformare majora in Europa, incepand cu a doua jumatate a secolului al XVIII-lea...'}
-                />
+              <div
+                className={`input-card${dragOver ? " drag-over" : ""}`}
+                onDragOver={handleDragOver}
+                onDragLeave={handleDragLeave}
+                onDrop={handleDrop}
+              >
+                {dragOver ? (
+                  <div className="drop-hint">
+                    <ImageIcon />
+                    <div className="drop-hint-text">Lasă imaginea aici</div>
+                    <div className="drop-hint-sub">Acceptă JPG, PNG, GIF, WebP</div>
+                  </div>
+                ) : (
+                  <textarea
+                    ref={textareaRef}
+                    value={inputText}
+                    onChange={e => setInputText(e.target.value)}
+                    placeholder={'Lipește aici textul lecției, sau trage/lipește o imagine (Ctrl+V)...\n\nExemplu: Revoluția Industrială a reprezentat o perioadă de transformare majoră în Europa, începând cu a doua jumătate a secolului al XVIII-lea...'}
+                  />
+                )}
+
+                {/* Image preview */}
+                {imageData && (
+                  <div className="image-preview-bar">
+                    <img src={imageData.preview} alt="Preview" className="image-thumb" />
+                    <div className="image-info">
+                      <div className="name">📷 {imageData.name || "Imagine lipită"}</div>
+                      <div className="hint">Imaginea va fi analizată de AI</div>
+                    </div>
+                    <button className="image-remove" onClick={() => setImageData(null)} title="Șterge imaginea">
+                      <XIcon />
+                    </button>
+                  </div>
+                )}
+
                 <div className="input-footer">
-                  <span className="char-count">{inputText.length} caractere</span>
+                  <div className="footer-left">
+                    <span className="char-count">{inputText.length} caractere</span>
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept="image/*"
+                      style={{ display: "none" }}
+                      onChange={(e) => {
+                        if (e.target.files?.[0]) processImage(e.target.files[0]);
+                        e.target.value = "";
+                      }}
+                    />
+                    <button className="btn-upload" onClick={() => fileInputRef.current?.click()}>
+                      <ImageIcon /> {imageData ? "Schimbă imaginea" : "Adaugă imagine"}
+                    </button>
+                  </div>
                   <button
                     className="btn-generate"
                     onClick={handleGenerate}
-                    disabled={!inputText.trim() || loading}
+                    disabled={!hasInput || loading}
                   >
                     <SparkleIcon /> Generează toate materialele
                   </button>
                 </div>
               </div>
 
-              {/* Number controls */}
               <div className="num-controls-row">
                 <div className="num-control">
                   <span className="num-label">✅ Itemi grilă:</span>
@@ -560,41 +704,23 @@ export default function EduPromptApp() {
                 </div>
               </div>
 
-              {/* Feature chips — now functional buttons */}
               <div className="features-row">
-                <button
-                  className="feature-chip fc-1"
-                  onClick={() => handleFocusedGenerate("rezumat")}
-                  disabled={!inputText.trim() || loading}
-                >
+                <button className="feature-chip fc-1" onClick={() => handleFocusedGenerate("rezumat")} disabled={!hasInput || loading}>
                   📝 Rezumat &amp; Întrebări
                 </button>
-                <button
-                  className="feature-chip fc-2"
-                  onClick={() => handleFocusedGenerate("grila")}
-                  disabled={!inputText.trim() || loading}
-                >
+                <button className="feature-chip fc-2" onClick={() => handleFocusedGenerate("grila")} disabled={!hasInput || loading}>
                   ✅ Itemi grilă ({numGrila})
                 </button>
-                <button
-                  className="feature-chip fc-3"
-                  onClick={() => handleFocusedGenerate("analiza")}
-                  disabled={!inputText.trim() || loading}
-                >
+                <button className="feature-chip fc-3" onClick={() => handleFocusedGenerate("analiza")} disabled={!hasInput || loading}>
                   🧠 Exerciții de analiză ({numAnaliza})
                 </button>
-                <button
-                  className="feature-chip fc-4"
-                  onClick={() => handleFocusedGenerate("fise")}
-                  disabled={!inputText.trim() || loading}
-                >
+                <button className="feature-chip fc-4" onClick={() => handleFocusedGenerate("fise")} disabled={!hasInput || loading}>
                   📄 Fișe diferențiate
                 </button>
               </div>
             </div>
           )}
 
-          {/* ── RESULT PHASE ── */}
           {phase === "result" && !loading && !error && (
             <div className="result-phase">
               <div className="result-toolbar">
@@ -633,10 +759,7 @@ export default function EduPromptApp() {
                       {copied ? <><CheckIcon /> Copiat!</> : <><CopyIcon /> Copiază tot</>}
                     </button>
                   </div>
-                  <div
-                    className="result-content"
-                    dangerouslySetInnerHTML={{ __html: md(result) }}
-                  />
+                  <div className="result-content" dangerouslySetInnerHTML={{ __html: md(result) }} />
                 </div>
               </div>
             </div>
