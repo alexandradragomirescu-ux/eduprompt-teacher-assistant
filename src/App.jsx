@@ -1,19 +1,23 @@
 import { useState, useRef, useCallback } from "react";
 
-const GENERATE_PROMPT = (type, grilaCount, analizaCount, booksContext) => {
+const GENERATE_PROMPT = (type, grilaCount, analizaCount, booksContext, bookTitles) => {
   const bookSection = booksContext
-    ? `\n\nCONȚINUT DIN CĂRȚI/MANUALE DE REFERINȚĂ:\n${booksContext}\n\nFolosește informațiile din cărțile de referință pentru a îmbogăți și completa materialele generate. Asigură-te că exercițiile și întrebările sunt aliniate cu terminologia și abordarea din manuale.`
+    ? `\n\nCONȚINUT DIN CĂRȚI/MANUALE DE REFERINȚĂ:\n${booksContext}\n\n⚠️ INSTRUCȚIUNE CRITICĂ: Bazează-te EXCLUSIV pe conținutul din cărțile/manualele de referință de mai sus. Toate exercițiile, întrebările, definițiile și explicațiile TREBUIE să provină din aceste surse. La începutul răspunsului, menționează scurt: "📚 Surse folosite: ${bookTitles}". Dacă o informație NU se găsește în manuale, precizează explicit acest lucru.`
+    : "";
+
+  const pdfNote = bookTitles && !booksContext
+    ? `\n\n⚠️ INSTRUCȚIUNE CRITICĂ: Ai atașate manuale PDF de referință (${bookTitles}). Bazează-te EXCLUSIV pe conținutul din aceste manuale PDF. Toate exercițiile, întrebările, definițiile și explicațiile TREBUIE să provină din aceste surse. La începutul răspunsului, menționează scurt: "📚 Surse folosite: ${bookTitles}". Dacă o informație NU se găsește în manuale, precizează explicit acest lucru.`
     : "";
 
   const prompts = {
-    sinteza: `Generează o SINTEZĂ A MATERIALULUI clară a lecției și 8-10 ÎNTREBĂRI de verificare (mixte: deschise și semi-deschise). Formatează frumos cu titluri și numere.${bookSection}`,
-    grila: `Generează exact ${grilaCount} ITEMI GRILĂ (întrebări cu 4 variante de răspuns A/B/C/D). La final, pune răspunsurile corecte. Numerotează-le.${bookSection}`,
-    analiza: `Generează exact ${analizaCount} EXERCIȚII DE ANALIZĂ aprofundată (comparații, studii de caz, eseuri scurte, analiză critică). Numerotează-le și descrie ce se așteaptă de la elev.${bookSection}`,
+    sinteza: `Generează o SINTEZĂ A MATERIALULUI clară a lecției și 8-10 ÎNTREBĂRI de verificare (mixte: deschise și semi-deschise). Formatează frumos cu titluri și numere.${bookSection}${pdfNote}`,
+    grila: `Generează exact ${grilaCount} ITEMI GRILĂ (întrebări cu 4 variante de răspuns A/B/C/D). La final, pune răspunsurile corecte. Numerotează-le.${bookSection}${pdfNote}`,
+    analiza: `Generează exact ${analizaCount} EXERCIȚII DE ANALIZĂ aprofundată (comparații, studii de caz, eseuri scurte, analiză critică). Numerotează-le și descrie ce se așteaptă de la elev.${bookSection}${pdfNote}`,
     fise: `Generează FIȘE DIFERENȚIATE pe 3 niveluri:
 - 🟢 NIVEL BAZĂ (recuperare): exerciții simple, completare, adevărat/fals
 - 🟡 NIVEL MEDIU (consolidare): exerciții de aplicare, răspunsuri scurte
 - 🔴 NIVEL AVANSAT (performanță): analiză, sinteză, argumentare
-Fiecare nivel să aibă 3-4 exerciții.${bookSection}`,
+Fiecare nivel să aibă 3-4 exerciții.${bookSection}${pdfNote}`,
     all: `Generează TOATE materialele didactice pentru lecția dată:
 
 1. **SINTEZA MATERIALULUI** - sinteză clară a lecției
@@ -25,7 +29,7 @@ Fiecare nivel să aibă 3-4 exerciții.${bookSection}`,
    - 🟡 MEDIU: 3 exerciții de aplicare
    - 🔴 AVANSAT: 3 exerciții de analiză/sinteză
 
-Formatează totul clar cu titluri, numerotare și separatoare.${bookSection}`,
+Formatează totul clar cu titluri, numerotare și separatoare.${bookSection}${pdfNote}`,
   };
   return prompts[type] || prompts.all;
 };
@@ -38,12 +42,14 @@ export default function App() {
   const [results, setResults] = useState({});
   const [loading, setLoading] = useState(false);
   const [loadingType, setLoadingType] = useState("");
+  const [usedBooks, setUsedBooks] = useState([]);
   const [books, setBooks] = useState([]);
   const [showBookPanel, setShowBookPanel] = useState(false);
   const [bookTitle, setBookTitle] = useState("");
   const [bookContent, setBookContent] = useState("");
   const [expandedBook, setExpandedBook] = useState(null);
   const [uploadingPdf, setUploadingPdf] = useState(false);
+  const [draggingOver, setDraggingOver] = useState(false);
   const pdfInputRef = useRef(null);
 
   const buildBooksContext = useCallback(() => {
@@ -69,14 +75,32 @@ export default function App() {
 
     try {
       const booksCtx = buildBooksContext();
-      const prompt = GENERATE_PROMPT(type, grilaCount, analizaCount, booksCtx);
       const pdfBlocks = buildPdfBlocks();
+      const bookTitles = books.map(b => b.title).join(", ");
+      const prompt = GENERATE_PROMPT(type, grilaCount, analizaCount, booksCtx, books.length > 0 ? bookTitles : "");
 
-      const userContent = [
-        ...pdfBlocks,
-        ...(pdfBlocks.length > 0 ? [{ type: "text", text: "Am atașat manuale PDF de referință. Folosește informațiile din ele pentru a genera materialele." }] : []),
-        { type: "text", text: `LECȚIA:\n${lessonText}\n\nINSTRUCȚIUNI:\n${prompt}` }
-      ];
+      // Track which books were used
+      setUsedBooks(books.map(b => ({ title: b.title, isPdf: b.isPdf })));
+
+      const hasBooks = books.length > 0;
+      const hasPdfs = pdfBlocks.length > 0;
+
+      const systemPrompt = hasBooks
+        ? `Ești un profesor expert care creează materiale didactice de calitate superioară bazate STRICT pe manualele/cărțile de referință furnizate. Răspunde DOAR în limba română. Formatează răspunsul cu markdown (titluri, liste, bold). IMPORTANT: Toate materialele generate TREBUIE să fie extrase și fundamentate pe conținutul din manualele atașate. La începutul fiecărui răspuns, menționează sursele folosite. Dacă utilizatorul scrie doar un titlu de lecție, caută acel subiect în manualele atașate și generează materialele pe baza conținutului găsit. Dacă o informație NU se găsește în manuale, precizează explicit acest lucru.`
+        : `Ești un profesor expert care creează materiale didactice de calitate superioară. Răspunde DOAR în limba română. Formatează răspunsul cu markdown (titluri, liste, bold). Fii creativ, riguros și adaptat nivelului liceal/gimnazial.`;
+
+      // Build the message content
+      let messageContent;
+      if (hasPdfs) {
+        // Array format needed for PDF attachments
+        messageContent = [
+          ...pdfBlocks,
+          { type: "text", text: `Am atașat manuale PDF de referință: ${bookTitles}. Bazează-te EXCLUSIV pe conținutul lor.\n\nSUBIECTUL/LECȚIA: ${lessonText}\n\nINSTRUCȚIUNI:\n${prompt}` }
+        ];
+      } else {
+        // Simple string format - text books context is already in the prompt
+        messageContent = `SUBIECTUL/LECȚIA: ${lessonText}\n\nINSTRUCȚIUNI:\n${prompt}`;
+      }
 
       const res = await fetch("https://api.anthropic.com/v1/messages", {
         method: "POST",
@@ -84,14 +108,19 @@ export default function App() {
         body: JSON.stringify({
           model: "claude-sonnet-4-20250514",
           max_tokens: 4000,
-          system: `Ești un profesor expert care creează materiale didactice de calitate superioară. Răspunde DOAR în limba română. Formatează răspunsul cu markdown (titluri, liste, bold). Fii creativ, riguros și adaptat nivelului liceal/gimnazial.`,
+          system: systemPrompt,
           messages: [
-            { role: "user", content: pdfBlocks.length > 0 ? userContent : `LECȚIA:\n${lessonText}\n\nINSTRUCȚIUNI:\n${prompt}` }
+            { role: "user", content: messageContent }
           ],
         }),
       });
       const data = await res.json();
-      const text = data.content?.map(c => c.text || "").join("") || "Eroare la generare.";
+      
+      if (data.error) {
+        throw new Error(data.error.message || "Eroare API");
+      }
+      
+      const text = data.content?.map(c => c.text || "").join("") || "Nu s-a primit răspuns.";
 
       if (type === "all") {
         setResults({ sinteza: text, grila: text, analiza: text, fise: text, all: text });
@@ -100,7 +129,9 @@ export default function App() {
         setResults(prev => ({ ...prev, [type]: text }));
       }
     } catch (err) {
-      setResults(prev => ({ ...prev, [type]: "⚠️ Eroare de conexiune. Încearcă din nou." }));
+      const errorMsg = err.message || "Eroare necunoscută";
+      setResults(prev => ({ ...prev, [type === "all" ? "sinteza" : type]: `⚠️ Eroare la generare: ${errorMsg}\n\nÎncearcă din nou sau verifică dacă PDF-ul nu e prea mare.` }));
+      if (type === "all") setActiveTab("sinteza");
     } finally {
       setLoading(false);
       setLoadingType("");
@@ -114,8 +145,7 @@ export default function App() {
     setBookContent("");
   };
 
-  const handlePdfUpload = (e) => {
-    const file = e.target.files?.[0];
+  const processPdfFile = (file) => {
     if (!file || file.type !== "application/pdf") return;
     setUploadingPdf(true);
     const reader = new FileReader();
@@ -136,7 +166,33 @@ export default function App() {
     };
     reader.onerror = () => setUploadingPdf(false);
     reader.readAsDataURL(file);
+  };
+
+  const handlePdfUpload = (e) => {
+    processPdfFile(e.target.files?.[0]);
     e.target.value = "";
+  };
+
+  const handleDrop = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDraggingOver(false);
+    const file = e.dataTransfer.files?.[0];
+    if (file && file.type === "application/pdf") {
+      processPdfFile(file);
+    }
+  };
+
+  const handleDragOver = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDraggingOver(true);
+  };
+
+  const handleDragLeave = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDraggingOver(false);
   };
 
   const removeBook = (id) => setBooks(prev => prev.filter(b => b.id !== id));
@@ -290,93 +346,114 @@ export default function App() {
               border: "1.5px dashed #d8d0c0",
               padding: 20, marginBottom: 16,
             }}>
-              <div style={{
-                display: "flex", gap: 12, flexWrap: "wrap",
-                alignItems: "flex-start",
-              }}>
-                <input
-                  value={bookTitle}
-                  onChange={e => setBookTitle(e.target.value)}
-                  placeholder="Titlul manualului (ex: Gramatica limbii române, clasa a VII-a)"
-                  style={{
-                    flex: "1 0 260px", padding: "11px 14px",
-                    border: "1.5px solid #e0d8c8", borderRadius: 10,
-                    fontSize: 13.5, fontFamily: "'Source Sans 3', sans-serif",
-                    background: "#fff", outline: "none",
-                  }}
-                />
-                <div style={{ display: "flex", gap: 8 }}>
-                  <button
-                    onClick={() => pdfInputRef.current?.click()}
-                    disabled={uploadingPdf}
-                    style={{
-                      padding: "11px 20px", borderRadius: 10,
-                      border: "2px solid #c4a265",
-                      background: "#fff",
-                      color: "#a8893e", fontSize: 13.5, fontWeight: 600,
+              {/* Title input */}
+              <input
+                value={bookTitle}
+                onChange={e => setBookTitle(e.target.value)}
+                placeholder="Titlul manualului (ex: Gramatica limbii române, clasa a VII-a) — opțional pentru PDF"
+                style={{
+                  width: "100%", padding: "11px 14px",
+                  border: "1.5px solid #e0d8c8", borderRadius: 10,
+                  fontSize: 13.5, fontFamily: "'Source Sans 3', sans-serif",
+                  background: "#fff", outline: "none",
+                  boxSizing: "border-box", marginBottom: 12,
+                }}
+              />
+
+              {/* Drag & Drop PDF Zone */}
+              <div
+                onDrop={handleDrop}
+                onDragOver={handleDragOver}
+                onDragLeave={handleDragLeave}
+                onClick={() => !uploadingPdf && pdfInputRef.current?.click()}
+                style={{
+                  border: draggingOver ? "2.5px dashed #c4a265" : "2px dashed #d8d0c0",
+                  borderRadius: 12,
+                  padding: "32px 20px",
+                  textAlign: "center",
+                  cursor: uploadingPdf ? "wait" : "pointer",
+                  background: draggingOver ? "rgba(196,162,101,0.08)" : "#fff",
+                  transition: "all 0.2s",
+                  marginBottom: 12,
+                }}
+              >
+                {uploadingPdf ? (
+                  <div style={{ color: "#a8893e" }}>
+                    <span style={{ fontSize: 28, display: "block", marginBottom: 8, animation: "spin 1s linear infinite" }}>⏳</span>
+                    <span style={{ fontSize: 14, fontWeight: 600, fontFamily: "'Source Sans 3', sans-serif" }}>
+                      Se încarcă PDF-ul...
+                    </span>
+                  </div>
+                ) : (
+                  <>
+                    <span style={{ fontSize: 36, display: "block", marginBottom: 8 }}>
+                      {draggingOver ? "📥" : "📄"}
+                    </span>
+                    <span style={{
+                      fontSize: 15, fontWeight: 600, color: "#2a1f0f",
                       fontFamily: "'Source Sans 3', sans-serif",
-                      whiteSpace: "nowrap", cursor: "pointer",
-                      display: "flex", alignItems: "center", gap: 6,
-                      transition: "all 0.2s",
-                    }}
-                  >
-                    {uploadingPdf ? (
-                      <><span style={{ animation: "spin 1s linear infinite", display: "inline-block" }}>⏳</span> Se încarcă...</>
-                    ) : (
-                      <>📄 Încarcă PDF</>
-                    )}
-                  </button>
-                  <input
-                    ref={pdfInputRef}
-                    type="file"
-                    accept=".pdf,application/pdf"
-                    onChange={handlePdfUpload}
-                    style={{ display: "none" }}
-                  />
-                  <button
-                    onClick={addBook}
-                    disabled={!bookTitle.trim() || !bookContent.trim()}
-                    style={{
-                      padding: "11px 24px", borderRadius: 10,
-                      border: "none", cursor: "pointer",
-                      background: bookTitle.trim() && bookContent.trim()
-                        ? "linear-gradient(135deg, #c4a265, #a8893e)" : "#ddd",
-                      color: "#fff", fontSize: 13.5, fontWeight: 600,
+                      display: "block", marginBottom: 4,
+                    }}>
+                      {draggingOver ? "Eliberează pentru a încărca" : "Trage un fișier PDF aici"}
+                    </span>
+                    <span style={{
+                      fontSize: 13, color: "#8a7e6e",
                       fontFamily: "'Source Sans 3', sans-serif",
-                      whiteSpace: "nowrap",
-                      transition: "all 0.2s",
-                    }}
-                  >
-                    + Adaugă text
-                  </button>
-                </div>
+                    }}>
+                      sau <span style={{ color: "#c4a265", fontWeight: 600, textDecoration: "underline" }}>click pentru a selecta</span> din calculator
+                    </span>
+                  </>
+                )}
               </div>
+              <input
+                ref={pdfInputRef}
+                type="file"
+                accept=".pdf,application/pdf"
+                onChange={handlePdfUpload}
+                style={{ display: "none" }}
+              />
+
+              {/* Divider */}
               <div style={{
-                display: "flex", gap: 10, marginTop: 10,
-                alignItems: "stretch",
+                display: "flex", alignItems: "center", gap: 14,
+                margin: "4px 0 12px",
               }}>
-                <textarea
-                  value={bookContent}
-                  onChange={e => setBookContent(e.target.value)}
-                  placeholder="Lipește aici conținutul cărții sau manualului (text copiat)... SAU folosește butonul „Încarcă PDF" de mai sus"
-                  rows={4}
-                  style={{
-                    flex: 1,
-                    padding: "12px 14px",
-                    border: "1.5px solid #e0d8c8", borderRadius: 10,
-                    fontSize: 13, fontFamily: "'Source Sans 3', sans-serif",
-                    background: "#fff", outline: "none",
-                    resize: "vertical", lineHeight: 1.55,
-                    boxSizing: "border-box",
-                  }}
-                />
+                <div style={{ flex: 1, height: 1, background: "#e0d8c8" }} />
+                <span style={{ fontSize: 12, color: "#a09888", fontFamily: "'Source Sans 3', sans-serif", fontWeight: 500 }}>SAU lipește text</span>
+                <div style={{ flex: 1, height: 1, background: "#e0d8c8" }} />
               </div>
-              <div style={{
-                marginTop: 10, fontSize: 11.5, color: "#a09888",
-                display: "flex", alignItems: "center", gap: 6,
-              }}>
-                💡 Poți adăuga manuale fie ca <strong>text lipit</strong>, fie ca <strong>fișier PDF</strong> încărcat direct.
-              </div>
+
+              {/* Text paste area */}
+              <textarea
+                value={bookContent}
+                onChange={e => setBookContent(e.target.value)}
+                placeholder="Lipește aici conținutul cărții sau manualului (text copiat din carte digitală, manual scanat etc.)..."
+                rows={3}
+                style={{
+                  width: "100%",
+                  padding: "12px 14px",
+                  border: "1.5px solid #e0d8c8", borderRadius: 10,
+                  fontSize: 13, fontFamily: "'Source Sans 3', sans-serif",
+                  background: "#fff", outline: "none",
+                  resize: "vertical", lineHeight: 1.55,
+                  boxSizing: "border-box",
+                }}
+              />
+              <button
+                onClick={addBook}
+                disabled={!bookTitle.trim() || !bookContent.trim()}
+                style={{
+                  marginTop: 10, padding: "10px 24px", borderRadius: 10,
+                  border: "none", cursor: "pointer",
+                  background: bookTitle.trim() && bookContent.trim()
+                    ? "linear-gradient(135deg, #c4a265, #a8893e)" : "#ddd",
+                  color: "#fff", fontSize: 13.5, fontWeight: 600,
+                  fontFamily: "'Source Sans 3', sans-serif",
+                  transition: "all 0.2s",
+                }}
+              >
+                + Adaugă text manual
+              </button>
             </div>
 
             {/* Book list */}
@@ -495,22 +572,6 @@ export default function App() {
           sinteza materialului, întrebări, itemi grilă, exerciții de analiză și fișe diferențiate.
         </p>
 
-        {/* Books active indicator */}
-        {books.length > 0 && (
-          <div style={{
-            display: "inline-flex", alignItems: "center", gap: 8,
-            background: "rgba(196,162,101,0.1)",
-            border: "1px solid rgba(196,162,101,0.25)",
-            borderRadius: 20, padding: "7px 18px",
-            fontSize: 12.5, color: "#6b5a3d",
-            marginBottom: 24,
-            fontFamily: "'Source Sans 3', sans-serif",
-          }}>
-            📚 {books.length} {books.length === 1 ? "manual de referință activ" : "manuale de referință active"}
-            <span style={{ color: "#a8893e", fontWeight: 600 }}>— vor fi folosite la generare</span>
-          </div>
-        )}
-
         {/* Textarea card */}
         <div style={{
           background: "#fff",
@@ -523,7 +584,9 @@ export default function App() {
           <textarea
             value={lessonText}
             onChange={e => setLessonText(e.target.value)}
-            placeholder={`Lipește aici textul lecției, sau trage/lipește o imagine (Ctrl+V)...\n\nExemplu: Revoluția Industrială a reprezentat o perioadă de transformare majoră în Europa, începând cu a doua jumătate a secolului al XVIII-lea...`}
+            placeholder={books.length > 0
+              ? `Scrie titlul lecției (ex: „Substantivul", „Verbul — moduri și timpuri", „Propoziția subordonată") sau lipește textul complet al lecției.\n\nAI-ul va căuta subiectul în manualele încărcate și va genera materialele pe baza lor.`
+              : `Lipește aici textul lecției, sau scrie titlul unei lecții...\n\nExemplu: Revoluția Industrială a reprezentat o perioadă de transformare majoră în Europa, începând cu a doua jumătate a secolului al XVIII-lea...\n\n💡 Sfat: Încarcă un manual PDF din „Bibliotecă manuale" pentru rezultate bazate pe surse concrete.`}
             rows={8}
             style={{
               width: "100%", border: "none", outline: "none",
@@ -657,16 +720,56 @@ export default function App() {
                 }}>Se generează materialele{books.length > 0 ? " (cu suport din manuale)" : ""}...</span>
               </div>
             ) : (
-              <div
-                style={{
-                  fontSize: 14.5, lineHeight: 1.75,
-                  color: "#3a3020",
-                  fontFamily: "'Source Sans 3', sans-serif",
-                }}
-                dangerouslySetInnerHTML={{
-                  __html: formatMd(results[activeTab] || results.all || "")
-                }}
-              />
+              <>
+                {/* Sources banner */}
+                {usedBooks.length > 0 && (
+                  <div style={{
+                    background: "rgba(106,176,112,0.06)",
+                    border: "1px solid rgba(106,176,112,0.2)",
+                    borderRadius: 10, padding: "10px 16px",
+                    marginBottom: 18,
+                    display: "flex", alignItems: "center", gap: 8,
+                    flexWrap: "wrap",
+                    fontFamily: "'Source Sans 3', sans-serif",
+                  }}>
+                    <span style={{ fontSize: 12.5, fontWeight: 600, color: "#2d6a30" }}>
+                      📚 Generat din:
+                    </span>
+                    {usedBooks.map((b, i) => (
+                      <span key={i} style={{
+                        background: "#fff",
+                        border: "1px solid rgba(106,176,112,0.25)",
+                        borderRadius: 6, padding: "3px 10px",
+                        fontSize: 12, color: "#3a6a3d", fontWeight: 500,
+                      }}>
+                        {b.isPdf ? "📄" : "📗"} {b.title}
+                      </span>
+                    ))}
+                  </div>
+                )}
+                {usedBooks.length === 0 && (results[activeTab] || results.all) && (
+                  <div style={{
+                    background: "rgba(196,162,101,0.06)",
+                    border: "1px solid rgba(196,162,101,0.2)",
+                    borderRadius: 10, padding: "10px 16px",
+                    marginBottom: 18,
+                    fontSize: 12.5, color: "#8a7040",
+                    fontFamily: "'Source Sans 3', sans-serif",
+                  }}>
+                    ⚠️ Generat fără manual de referință — conținutul se bazează pe cunoștințele generale ale AI-ului.
+                  </div>
+                )}
+                <div
+                  style={{
+                    fontSize: 14.5, lineHeight: 1.75,
+                    color: "#3a3020",
+                    fontFamily: "'Source Sans 3', sans-serif",
+                  }}
+                  dangerouslySetInnerHTML={{
+                    __html: formatMd(results[activeTab] || results.all || "")
+                  }}
+                />
+              </>
             )}
           </div>
         )}
