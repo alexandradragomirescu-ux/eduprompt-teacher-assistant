@@ -17,6 +17,44 @@ La finalul răspunsului, adaugă o scurtă evaluare a eficienței procesului (ti
 
 Formatează răspunsul folosind Markdown clar, cu headere, liste numerotate și bold pentru secțiuni. Fii detaliat și profesionist.`;
 
+const FOCUSED_PROMPTS = {
+  rezumat: `Ești un profesor expert. Generează DOAR următoarele pentru textul primit:
+1. **Rezumatul lecției** – concis, 5–7 rânduri
+2. **5 întrebări de verificare a înțelegerii** – întrebări deschise, cu răspunsuri așteptate
+
+Formatează răspunsul folosind Markdown clar. Răspunde DOAR în limba română.`,
+
+  grila: (num) => `Ești un profesor expert. Generează EXACT ${num} ITEMI GRILĂ pentru textul primit.
+
+Fiecare item trebuie să aibă:
+- Întrebarea
+- 4 variante de răspuns (A, B, C, D)
+- Răspunsul corect marcat cu ✔️
+
+Formatează răspunsul folosind Markdown clar. Răspunde DOAR în limba română.`,
+
+  analiza: (num) => `Ești un profesor expert. Generează EXACT ${num} EXERCIȚII DE ANALIZĂ complexe pentru textul primit.
+
+Exercițiile trebuie să solicite gândire critică, aplicare sau interpretare. Include exerciții variate: comparație, argumentare, sinteză, evaluare.
+
+Pentru fiecare exercițiu include:
+- Titlul exercițiului
+- Cerința detaliată
+- Indicații pentru rezolvare
+
+Formatează răspunsul folosind Markdown clar. Răspunde DOAR în limba română.`,
+
+  fise: `Ești un profesor expert. Generează DOAR FIȘE DE LUCRU DIFERENȚIATE pe 3 niveluri pentru textul primit:
+
+1. **Nivel de bază** (pentru elevii care au nevoie de sprijin suplimentar) – exerciții simple, cu suport
+2. **Nivel mediu** (pentru majoritatea elevilor) – exerciții moderate
+3. **Nivel avansat** (pentru elevii performanți) – exerciții provocatoare, de aprofundare
+
+Fiecare fișă trebuie să conțină 3-4 exerciții.
+
+Formatează răspunsul folosind Markdown clar. Răspunde DOAR în limba română.`
+};
+
 const OPTION_PROMPTS = {
   1: "Adaptează materialele generate anterior pe niveluri de dificultate: nivel de bază (pentru elevi cu dificultăți de învățare), nivel mediu și nivel avansat (pentru elevi performanți). Păstrează formatul Markdown clar.",
   2: "Transformă conținutul generat anterior într-un mini-test de 10 minute cu barem de corectare detaliat. Include: 5 itemi grilă (câte 1 punct fiecare), 2 întrebări cu răspuns scurt (câte 1.5 puncte fiecare) și 1 subiect de tip eseu scurt (2 puncte). Total: 10 puncte. Se acordă 1 punct din oficiu. Adaugă baremul complet.",
@@ -37,9 +75,7 @@ function md(text) {
     .replace(/^---$/gm, '<hr/>')
     .replace(/^[-•] (.+)$/gm, '<li>$1</li>')
     .replace(/^(\d+)\. (.+)$/gm, '<li>$2</li>');
-  // wrap consecutive <li> in <ul>
   h = h.replace(/((?:<li>.*<\/li>\n?)+)/g, '<ul>$1</ul>');
-  // paragraphs
   h = h.split(/\n{2,}/).map(p => {
     p = p.trim();
     if (/^<[hul]/.test(p) || /^<hr/.test(p)) return p;
@@ -69,30 +105,21 @@ const CheckIcon = () => (
     <polyline points="20 6 9 17 4 12"/>
   </svg>
 );
-const SendIcon = () => (
-  <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
-    <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/>
-  </svg>
-);
-const LoaderIcon = () => (
-  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-    <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83">
-      <animateTransform attributeName="transform" type="rotate" from="0 12 12" to="360 12 12" dur="1s" repeatCount="indefinite"/>
-    </path>
-  </svg>
-);
 
 const FONTS_URL = "https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap";
 
 export default function EduPromptApp() {
   const [inputText, setInputText] = useState("");
-  const [messages, setMessages] = useState([]); // {role, content}
+  const [messages, setMessages] = useState([]);
   const [result, setResult] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [copied, setCopied] = useState(false);
-  const [phase, setPhase] = useState("input"); // input | result
+  const [phase, setPhase] = useState("input");
   const [loadingMsg, setLoadingMsg] = useState(0);
+  const [activeChip, setActiveChip] = useState(null);
+  const [numGrila, setNumGrila] = useState(5);
+  const [numAnaliza, setNumAnaliza] = useState(3);
   const resultRef = useRef(null);
 
   const loadingMessages = [
@@ -110,7 +137,7 @@ export default function EduPromptApp() {
     return () => clearInterval(iv);
   }, [loading]);
 
-  async function callAPI(userContent, history = []) {
+  async function callAPI(userContent, systemPrompt, history = []) {
     setLoading(true);
     setError("");
     setLoadingMsg(0);
@@ -122,7 +149,7 @@ export default function EduPromptApp() {
         body: JSON.stringify({
           model: "claude-sonnet-4-20250514",
           max_tokens: 4096,
-          system: SYSTEM_PROMPT,
+          system: systemPrompt,
           messages: msgs
         })
       });
@@ -143,11 +170,26 @@ export default function EduPromptApp() {
 
   function handleGenerate() {
     if (!inputText.trim()) return;
-    callAPI(`Iată textul lecției pe care doresc să-l prelucrezi:\n\n${inputText}`);
+    setActiveChip(null);
+    callAPI(`Iată textul lecției pe care doresc să-l prelucrezi:\n\n${inputText}`, SYSTEM_PROMPT);
+  }
+
+  function handleFocusedGenerate(type) {
+    if (!inputText.trim()) return;
+    setActiveChip(type);
+    let systemPrompt;
+    if (type === "grila") {
+      systemPrompt = FOCUSED_PROMPTS.grila(numGrila);
+    } else if (type === "analiza") {
+      systemPrompt = FOCUSED_PROMPTS.analiza(numAnaliza);
+    } else {
+      systemPrompt = FOCUSED_PROMPTS[type];
+    }
+    callAPI(`Iată textul lecției:\n\n${inputText}`, systemPrompt);
   }
 
   function handleOption(opt) {
-    callAPI(OPTION_PROMPTS[opt], messages);
+    callAPI(OPTION_PROMPTS[opt], SYSTEM_PROMPT, messages);
   }
 
   function handleCopy() {
@@ -163,6 +205,7 @@ export default function EduPromptApp() {
     setMessages([]);
     setInputText("");
     setError("");
+    setActiveChip(null);
   }
 
   return (
@@ -279,19 +322,61 @@ export default function EduPromptApp() {
         .btn-generate:hover { transform: translateY(-1px); box-shadow: 0 4px 16px rgba(184,98,27,0.35); }
         .btn-generate:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
 
+        /* ── feature chips (now buttons) ── */
         .features-row {
-          display: flex; gap: 14px; flex-wrap: wrap; justify-content: center;
+          display: flex; gap: 10px; flex-wrap: wrap; justify-content: center;
           max-width: 720px; margin-top: 24px;
         }
         .feature-chip {
           display: flex; align-items: center; gap: 6px;
-          padding: 6px 14px; border-radius: 20px;
-          font-size: 0.75rem; font-weight: 500;
+          padding: 8px 16px; border-radius: 20px;
+          font-size: 0.8rem; font-weight: 600;
+          border: 2px solid transparent;
+          cursor: pointer; transition: all 0.2s;
+          font-family: var(--font-body);
         }
+        .feature-chip:hover {
+          transform: translateY(-2px);
+          box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        }
+        .feature-chip:active { transform: scale(0.97); }
+        .feature-chip:disabled { opacity: 0.5; cursor: not-allowed; transform: none; box-shadow: none; }
         .fc-1 { background: var(--accent-soft); color: var(--accent); }
+        .fc-1:hover { border-color: var(--accent); }
         .fc-2 { background: var(--green-soft); color: var(--green); }
+        .fc-2:hover { border-color: var(--green); }
         .fc-3 { background: var(--blue-soft); color: var(--blue); }
+        .fc-3:hover { border-color: var(--blue); }
         .fc-4 { background: var(--purple-soft); color: var(--purple); }
+        .fc-4:hover { border-color: var(--purple); }
+
+        /* ── number controls ── */
+        .num-controls-row {
+          display: flex; gap: 14px; flex-wrap: wrap; justify-content: center;
+          max-width: 720px; margin-top: 16px;
+        }
+        .num-control {
+          display: flex; align-items: center; gap: 8px;
+          background: var(--surface); border: 1px solid var(--border);
+          border-radius: 10px; padding: 6px 14px;
+          font-family: var(--font-body); transition: border-color 0.2s;
+        }
+        .num-control:hover { border-color: var(--accent); }
+        .num-label { font-size: 0.78rem; color: var(--ink2); font-weight: 500; white-space: nowrap; }
+        .num-btn {
+          width: 28px; height: 28px; border-radius: 6px;
+          border: 1px solid var(--border); background: var(--bg);
+          cursor: pointer; font-size: 1rem; color: var(--ink2);
+          display: flex; align-items: center; justify-content: center;
+          font-family: var(--font-body); transition: all 0.15s; line-height: 1;
+        }
+        .num-btn:hover { background: var(--accent); color: white; border-color: var(--accent); }
+        .num-btn:active { transform: scale(0.9); }
+        .num-value {
+          min-width: 28px; text-align: center; font-size: 1.05rem;
+          font-weight: 700; color: var(--ink);
+          font-family: var(--font-display);
+        }
 
         /* ── RESULT PHASE ── */
         .result-phase {
@@ -348,6 +433,12 @@ export default function EduPromptApp() {
         .btn-copy:hover { border-color: var(--green); color: var(--green); }
         .btn-copy.copied { border-color: var(--green); color: var(--green); background: var(--green-soft); }
 
+        .generated-label {
+          display: inline-flex; align-items: center; gap: 6px;
+          padding: 5px 12px; border-radius: 6px; font-size: 0.72rem;
+          font-weight: 600; margin-bottom: 16px;
+        }
+
         /* ── loading overlay ── */
         .loading-overlay {
           flex: 1; display: flex; flex-direction: column;
@@ -385,6 +476,7 @@ export default function EduPromptApp() {
           .result-content { padding: 20px 18px; }
           .result-toolbar { padding: 8px 12px; }
           .features-row { gap: 8px; }
+          .num-controls-row { gap: 8px; }
         }
       `}</style>
 
@@ -447,16 +539,57 @@ export default function EduPromptApp() {
                     onClick={handleGenerate}
                     disabled={!inputText.trim() || loading}
                   >
-                    <SparkleIcon /> Generează materiale
+                    <SparkleIcon /> Generează toate materialele
                   </button>
                 </div>
               </div>
 
+              {/* Number controls */}
+              <div className="num-controls-row">
+                <div className="num-control">
+                  <span className="num-label">✅ Itemi grilă:</span>
+                  <button className="num-btn" onClick={() => setNumGrila(n => Math.max(2, n - 1))}>−</button>
+                  <span className="num-value">{numGrila}</span>
+                  <button className="num-btn" onClick={() => setNumGrila(n => Math.min(20, n + 1))}>+</button>
+                </div>
+                <div className="num-control">
+                  <span className="num-label">🧠 Exerciții analiză:</span>
+                  <button className="num-btn" onClick={() => setNumAnaliza(n => Math.max(1, n - 1))}>−</button>
+                  <span className="num-value">{numAnaliza}</span>
+                  <button className="num-btn" onClick={() => setNumAnaliza(n => Math.min(12, n + 1))}>+</button>
+                </div>
+              </div>
+
+              {/* Feature chips — now functional buttons */}
               <div className="features-row">
-                <span className="feature-chip fc-1">📝 Rezumat &amp; Întrebări</span>
-                <span className="feature-chip fc-2">✅ Itemi grilă</span>
-                <span className="feature-chip fc-3">🧠 Exerciții de analiză</span>
-                <span className="feature-chip fc-4">📄 Fișe diferențiate</span>
+                <button
+                  className="feature-chip fc-1"
+                  onClick={() => handleFocusedGenerate("rezumat")}
+                  disabled={!inputText.trim() || loading}
+                >
+                  📝 Rezumat &amp; Întrebări
+                </button>
+                <button
+                  className="feature-chip fc-2"
+                  onClick={() => handleFocusedGenerate("grila")}
+                  disabled={!inputText.trim() || loading}
+                >
+                  ✅ Itemi grilă ({numGrila})
+                </button>
+                <button
+                  className="feature-chip fc-3"
+                  onClick={() => handleFocusedGenerate("analiza")}
+                  disabled={!inputText.trim() || loading}
+                >
+                  🧠 Exerciții de analiză ({numAnaliza})
+                </button>
+                <button
+                  className="feature-chip fc-4"
+                  onClick={() => handleFocusedGenerate("fise")}
+                  disabled={!inputText.trim() || loading}
+                >
+                  📄 Fișe diferențiate
+                </button>
               </div>
             </div>
           )}
@@ -483,6 +616,19 @@ export default function EduPromptApp() {
               <div className="result-scroll" ref={resultRef}>
                 <div style={{ maxWidth: 780, margin: "0 auto" }}>
                   <div className="copy-bar">
+                    {activeChip && (
+                      <span className={`generated-label ${
+                        activeChip === "rezumat" ? "fc-1" :
+                        activeChip === "grila" ? "fc-2" :
+                        activeChip === "analiza" ? "fc-3" : "fc-4"
+                      }`}>
+                        {activeChip === "rezumat" && "📝 Rezumat & Întrebări"}
+                        {activeChip === "grila" && `✅ ${numGrila} Itemi grilă`}
+                        {activeChip === "analiza" && `🧠 ${numAnaliza} Exerciții de analiză`}
+                        {activeChip === "fise" && "📄 Fișe diferențiate"}
+                      </span>
+                    )}
+                    <div style={{ flex: 1 }} />
                     <button className={`btn-copy${copied ? " copied" : ""}`} onClick={handleCopy}>
                       {copied ? <><CheckIcon /> Copiat!</> : <><CopyIcon /> Copiază tot</>}
                     </button>
