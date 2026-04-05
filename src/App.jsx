@@ -43,12 +43,22 @@ export default function App() {
   const [bookTitle, setBookTitle] = useState("");
   const [bookContent, setBookContent] = useState("");
   const [expandedBook, setExpandedBook] = useState(null);
+  const [uploadingPdf, setUploadingPdf] = useState(false);
+  const pdfInputRef = useRef(null);
 
   const buildBooksContext = useCallback(() => {
-    if (books.length === 0) return "";
-    return books.map((b, i) =>
+    const textBooks = books.filter(b => !b.isPdf);
+    if (textBooks.length === 0) return "";
+    return textBooks.map((b, i) =>
       `--- MANUAL ${i + 1}: "${b.title}" ---\n${b.content.substring(0, 8000)}\n--- SFÂRȘIT ---`
     ).join("\n\n");
+  }, [books]);
+
+  const buildPdfBlocks = useCallback(() => {
+    return books.filter(b => b.isPdf).map(b => ({
+      type: "document",
+      source: { type: "base64", media_type: "application/pdf", data: b.pdfData },
+    }));
   }, [books]);
 
   const generate = async (type) => {
@@ -60,6 +70,13 @@ export default function App() {
     try {
       const booksCtx = buildBooksContext();
       const prompt = GENERATE_PROMPT(type, grilaCount, analizaCount, booksCtx);
+      const pdfBlocks = buildPdfBlocks();
+
+      const userContent = [
+        ...pdfBlocks,
+        ...(pdfBlocks.length > 0 ? [{ type: "text", text: "Am atașat manuale PDF de referință. Folosește informațiile din ele pentru a genera materialele." }] : []),
+        { type: "text", text: `LECȚIA:\n${lessonText}\n\nINSTRUCȚIUNI:\n${prompt}` }
+      ];
 
       const res = await fetch("https://api.anthropic.com/v1/messages", {
         method: "POST",
@@ -69,7 +86,7 @@ export default function App() {
           max_tokens: 4000,
           system: `Ești un profesor expert care creează materiale didactice de calitate superioară. Răspunde DOAR în limba română. Formatează răspunsul cu markdown (titluri, liste, bold). Fii creativ, riguros și adaptat nivelului liceal/gimnazial.`,
           messages: [
-            { role: "user", content: `LECȚIA:\n${lessonText}\n\nINSTRUCȚIUNI:\n${prompt}` }
+            { role: "user", content: pdfBlocks.length > 0 ? userContent : `LECȚIA:\n${lessonText}\n\nINSTRUCȚIUNI:\n${prompt}` }
           ],
         }),
       });
@@ -92,9 +109,34 @@ export default function App() {
 
   const addBook = () => {
     if (!bookTitle.trim() || !bookContent.trim()) return;
-    setBooks(prev => [...prev, { id: Date.now(), title: bookTitle.trim(), content: bookContent.trim() }]);
+    setBooks(prev => [...prev, { id: Date.now(), title: bookTitle.trim(), content: bookContent.trim(), isPdf: false }]);
     setBookTitle("");
     setBookContent("");
+  };
+
+  const handlePdfUpload = (e) => {
+    const file = e.target.files?.[0];
+    if (!file || file.type !== "application/pdf") return;
+    setUploadingPdf(true);
+    const reader = new FileReader();
+    reader.onload = () => {
+      const base64 = reader.result.split(",")[1];
+      const title = bookTitle.trim() || file.name.replace(/\.pdf$/i, "");
+      setBooks(prev => [...prev, {
+        id: Date.now(),
+        title,
+        content: `[PDF] ${file.name} — ${(file.size / 1024).toFixed(0)} KB`,
+        pdfData: base64,
+        isPdf: true,
+        fileName: file.name,
+        fileSize: file.size,
+      }]);
+      setBookTitle("");
+      setUploadingPdf(false);
+    };
+    reader.onerror = () => setUploadingPdf(false);
+    reader.readAsDataURL(file);
+    e.target.value = "";
   };
 
   const removeBook = (id) => setBooks(prev => prev.filter(b => b.id !== id));
@@ -263,38 +305,78 @@ export default function App() {
                     background: "#fff", outline: "none",
                   }}
                 />
-                <button
-                  onClick={addBook}
-                  disabled={!bookTitle.trim() || !bookContent.trim()}
-                  style={{
-                    padding: "11px 24px", borderRadius: 10,
-                    border: "none", cursor: "pointer",
-                    background: bookTitle.trim() && bookContent.trim()
-                      ? "linear-gradient(135deg, #c4a265, #a8893e)" : "#ddd",
-                    color: "#fff", fontSize: 13.5, fontWeight: 600,
-                    fontFamily: "'Source Sans 3', sans-serif",
-                    whiteSpace: "nowrap",
-                    transition: "all 0.2s",
-                  }}
-                >
-                  + Adaugă manual
-                </button>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <button
+                    onClick={() => pdfInputRef.current?.click()}
+                    disabled={uploadingPdf}
+                    style={{
+                      padding: "11px 20px", borderRadius: 10,
+                      border: "2px solid #c4a265",
+                      background: "#fff",
+                      color: "#a8893e", fontSize: 13.5, fontWeight: 600,
+                      fontFamily: "'Source Sans 3', sans-serif",
+                      whiteSpace: "nowrap", cursor: "pointer",
+                      display: "flex", alignItems: "center", gap: 6,
+                      transition: "all 0.2s",
+                    }}
+                  >
+                    {uploadingPdf ? (
+                      <><span style={{ animation: "spin 1s linear infinite", display: "inline-block" }}>⏳</span> Se încarcă...</>
+                    ) : (
+                      <>📄 Încarcă PDF</>
+                    )}
+                  </button>
+                  <input
+                    ref={pdfInputRef}
+                    type="file"
+                    accept=".pdf,application/pdf"
+                    onChange={handlePdfUpload}
+                    style={{ display: "none" }}
+                  />
+                  <button
+                    onClick={addBook}
+                    disabled={!bookTitle.trim() || !bookContent.trim()}
+                    style={{
+                      padding: "11px 24px", borderRadius: 10,
+                      border: "none", cursor: "pointer",
+                      background: bookTitle.trim() && bookContent.trim()
+                        ? "linear-gradient(135deg, #c4a265, #a8893e)" : "#ddd",
+                      color: "#fff", fontSize: 13.5, fontWeight: 600,
+                      fontFamily: "'Source Sans 3', sans-serif",
+                      whiteSpace: "nowrap",
+                      transition: "all 0.2s",
+                    }}
+                  >
+                    + Adaugă text
+                  </button>
+                </div>
               </div>
-              <textarea
-                value={bookContent}
-                onChange={e => setBookContent(e.target.value)}
-                placeholder="Lipește aici conținutul cărții sau manualului (text copiat din PDF, carte digitală, manual scanat etc.)..."
-                rows={4}
-                style={{
-                  width: "100%", marginTop: 10,
-                  padding: "12px 14px",
-                  border: "1.5px solid #e0d8c8", borderRadius: 10,
-                  fontSize: 13, fontFamily: "'Source Sans 3', sans-serif",
-                  background: "#fff", outline: "none",
-                  resize: "vertical", lineHeight: 1.55,
-                  boxSizing: "border-box",
-                }}
-              />
+              <div style={{
+                display: "flex", gap: 10, marginTop: 10,
+                alignItems: "stretch",
+              }}>
+                <textarea
+                  value={bookContent}
+                  onChange={e => setBookContent(e.target.value)}
+                  placeholder="Lipește aici conținutul cărții sau manualului (text copiat)... SAU folosește butonul „Încarcă PDF" de mai sus"
+                  rows={4}
+                  style={{
+                    flex: 1,
+                    padding: "12px 14px",
+                    border: "1.5px solid #e0d8c8", borderRadius: 10,
+                    fontSize: 13, fontFamily: "'Source Sans 3', sans-serif",
+                    background: "#fff", outline: "none",
+                    resize: "vertical", lineHeight: 1.55,
+                    boxSizing: "border-box",
+                  }}
+                />
+              </div>
+              <div style={{
+                marginTop: 10, fontSize: 11.5, color: "#a09888",
+                display: "flex", alignItems: "center", gap: 6,
+              }}>
+                💡 Poți adăuga manuale fie ca <strong>text lipit</strong>, fie ca <strong>fișier PDF</strong> încărcat direct.
+              </div>
             </div>
 
             {/* Book list */}
@@ -314,21 +396,35 @@ export default function App() {
                         style={{ flex: 1, cursor: "pointer", display: "flex", alignItems: "center", gap: 10 }}
                         onClick={() => setExpandedBook(expandedBook === b.id ? null : b.id)}
                       >
-                        <span style={{ fontSize: 20 }}>📗</span>
+                        <span style={{ fontSize: 20 }}>{b.isPdf ? "📄" : "📗"}</span>
                         <div>
-                          <span style={{
-                            fontWeight: 600, fontSize: 14, color: "#2a1f0f",
-                            fontFamily: "'Playfair Display', serif",
-                          }}>{b.title}</span>
+                          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                            <span style={{
+                              fontWeight: 600, fontSize: 14, color: "#2a1f0f",
+                              fontFamily: "'Playfair Display', serif",
+                            }}>{b.title}</span>
+                            {b.isPdf && (
+                              <span style={{
+                                background: "rgba(196,162,101,0.15)",
+                                color: "#a8893e", fontSize: 10, fontWeight: 700,
+                                padding: "2px 7px", borderRadius: 4,
+                                fontFamily: "'Source Sans 3', sans-serif",
+                                letterSpacing: "0.5px",
+                              }}>PDF</span>
+                            )}
+                          </div>
                           <div style={{ fontSize: 11.5, color: "#8a7e6e", marginTop: 2 }}>
-                            {b.content.split(/\s+/).length.toLocaleString()} cuvinte · {b.content.length.toLocaleString()} caractere
+                            {b.isPdf
+                              ? `${b.fileName} · ${(b.fileSize / 1024).toFixed(0)} KB`
+                              : `${b.content.split(/\s+/).length.toLocaleString()} cuvinte · ${b.content.length.toLocaleString()} caractere`
+                            }
                           </div>
                         </div>
                         <span style={{
                           fontSize: 11, color: "#c4a265", marginLeft: "auto",
                           fontWeight: 500,
                         }}>
-                          {expandedBook === b.id ? "▲ ascunde" : "▼ previzualizare"}
+                          {expandedBook === b.id ? "▲ ascunde" : (b.isPdf ? "▼ detalii" : "▼ previzualizare")}
                         </span>
                       </div>
                       <button onClick={() => removeBook(b.id)} style={{
@@ -350,7 +446,15 @@ export default function App() {
                         overflow: "auto", border: "1px solid #e8e0d0",
                         whiteSpace: "pre-wrap",
                       }}>
-                        {b.content.substring(0, 3000)}{b.content.length > 3000 ? "\n\n... (conținut trunchiat pentru previzualizare)" : ""}
+                        {b.isPdf ? (
+                          <div style={{ textAlign: "center", padding: "20px 0", color: "#8a7e6e" }}>
+                            <span style={{ fontSize: 32, display: "block", marginBottom: 8 }}>📄</span>
+                            Fișier PDF încărcat: <strong>{b.fileName}</strong><br />
+                            Conținutul va fi trimis direct la AI pentru procesare.
+                          </div>
+                        ) : (
+                          <>{b.content.substring(0, 3000)}{b.content.length > 3000 ? "\n\n... (conținut trunchiat pentru previzualizare)" : ""}</>
+                        )}
                       </div>
                     )}
                   </div>
