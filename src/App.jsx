@@ -44,12 +44,7 @@ export default function App() {
   const [loadingType, setLoadingType] = useState("");
   const [usedBooks, setUsedBooks] = useState([]);
   const [books, setBooks] = useState([]);
-  const [showBookPanel, setShowBookPanel] = useState(false);
-  const [bookTitle, setBookTitle] = useState("");
-  const [bookContent, setBookContent] = useState("");
-  const [expandedBook, setExpandedBook] = useState(null);
   const [uploadingPdf, setUploadingPdf] = useState(false);
-  const [draggingOver, setDraggingOver] = useState(false);
   const pdfInputRef = useRef(null);
 
   const buildBooksContext = useCallback(() => {
@@ -138,20 +133,13 @@ export default function App() {
     }
   };
 
-  const addBook = () => {
-    if (!bookTitle.trim() || !bookContent.trim()) return;
-    setBooks(prev => [...prev, { id: Date.now(), title: bookTitle.trim(), content: bookContent.trim(), isPdf: false }]);
-    setBookTitle("");
-    setBookContent("");
-  };
-
   const processPdfFile = (file) => {
     if (!file || file.type !== "application/pdf") return;
     setUploadingPdf(true);
     const reader = new FileReader();
     reader.onload = () => {
       const base64 = reader.result.split(",")[1];
-      const title = bookTitle.trim() || file.name.replace(/\.pdf$/i, "");
+      const title = file.name.replace(/\.pdf$/i, "");
       setBooks(prev => [...prev, {
         id: Date.now(),
         title,
@@ -161,7 +149,6 @@ export default function App() {
         fileName: file.name,
         fileSize: file.size,
       }]);
-      setBookTitle("");
       setUploadingPdf(false);
     };
     reader.onerror = () => setUploadingPdf(false);
@@ -171,28 +158,6 @@ export default function App() {
   const handlePdfUpload = (e) => {
     processPdfFile(e.target.files?.[0]);
     e.target.value = "";
-  };
-
-  const handleDrop = (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setDraggingOver(false);
-    const file = e.dataTransfer.files?.[0];
-    if (file && file.type === "application/pdf") {
-      processPdfFile(file);
-    }
-  };
-
-  const handleDragOver = (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setDraggingOver(true);
-  };
-
-  const handleDragLeave = (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setDraggingOver(false);
   };
 
   const removeBook = (id) => setBooks(prev => prev.filter(b => b.id !== id));
@@ -264,8 +229,6 @@ export default function App() {
         padding: "20px 32px 14px",
         borderBottom: "3px solid #c4a265",
         background: "#fff",
-        display: "flex", alignItems: "center", justifyContent: "space-between",
-        flexWrap: "wrap", gap: 12,
       }}>
         <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
           <div style={{
@@ -287,267 +250,8 @@ export default function App() {
             }}>Generator inteligent de materiale didactice</p>
           </div>
         </div>
-
-        {/* Books toggle */}
-        <button
-          onClick={() => setShowBookPanel(!showBookPanel)}
-          style={{
-            display: "flex", alignItems: "center", gap: 8,
-            padding: "10px 20px", borderRadius: 12,
-            border: showBookPanel ? "2px solid #c4a265" : "2px solid #e0d8c8",
-            background: showBookPanel ? "rgba(196,162,101,0.08)" : "#fff",
-            cursor: "pointer", fontSize: 14, fontWeight: 600,
-            color: "#4a3f2f",
-            fontFamily: "'Source Sans 3', sans-serif",
-            transition: "all 0.2s",
-          }}
-        >
-          <span style={{ fontSize: 18 }}>📚</span>
-          Bibliotecă manuale
-          {books.length > 0 && (
-            <span style={{
-              background: "#c4a265", color: "#fff",
-              borderRadius: 10, padding: "1px 8px",
-              fontSize: 12, fontWeight: 700,
-            }}>{books.length}</span>
-          )}
-        </button>
       </header>
 
-      {/* Books Panel */}
-      {showBookPanel && (
-        <div style={{
-          background: "#fff",
-          borderBottom: "1px solid #e8e0d0",
-          padding: "24px 32px",
-          overflow: "hidden",
-        }}>
-          <div style={{ maxWidth: 900, margin: "0 auto" }}>
-            <div style={{
-              display: "flex", alignItems: "flex-start", justifyContent: "space-between",
-              marginBottom: 18, flexWrap: "wrap", gap: 8,
-            }}>
-              <div>
-                <h2 style={{
-                  margin: 0, fontSize: 18,
-                  fontFamily: "'Playfair Display', serif",
-                  fontWeight: 700, color: "#2a1f0f",
-                }}>📚 Bibliotecă de cărți și manuale</h2>
-                <p style={{
-                  margin: "4px 0 0", fontSize: 12.5, color: "#8a7e6e",
-                }}>Adaugă manuale de referință — conținutul lor va fi folosit automat la generarea materialelor</p>
-              </div>
-            </div>
-
-            {/* Add book */}
-            <div style={{
-              background: "#faf8f3",
-              borderRadius: 14,
-              border: "1.5px dashed #d8d0c0",
-              padding: 20, marginBottom: 16,
-            }}>
-              {/* Title input */}
-              <input
-                value={bookTitle}
-                onChange={e => setBookTitle(e.target.value)}
-                placeholder="Titlul manualului (ex: Gramatica limbii române, clasa a VII-a) — opțional pentru PDF"
-                style={{
-                  width: "100%", padding: "11px 14px",
-                  border: "1.5px solid #e0d8c8", borderRadius: 10,
-                  fontSize: 13.5, fontFamily: "'Source Sans 3', sans-serif",
-                  background: "#fff", outline: "none",
-                  boxSizing: "border-box", marginBottom: 12,
-                }}
-              />
-
-              {/* Drag & Drop PDF Zone */}
-              <div
-                onDrop={handleDrop}
-                onDragOver={handleDragOver}
-                onDragLeave={handleDragLeave}
-                onClick={() => !uploadingPdf && pdfInputRef.current?.click()}
-                style={{
-                  border: draggingOver ? "2.5px dashed #c4a265" : "2px dashed #d8d0c0",
-                  borderRadius: 12,
-                  padding: "32px 20px",
-                  textAlign: "center",
-                  cursor: uploadingPdf ? "wait" : "pointer",
-                  background: draggingOver ? "rgba(196,162,101,0.08)" : "#fff",
-                  transition: "all 0.2s",
-                  marginBottom: 12,
-                }}
-              >
-                {uploadingPdf ? (
-                  <div style={{ color: "#a8893e" }}>
-                    <span style={{ fontSize: 28, display: "block", marginBottom: 8, animation: "spin 1s linear infinite" }}>⏳</span>
-                    <span style={{ fontSize: 14, fontWeight: 600, fontFamily: "'Source Sans 3', sans-serif" }}>
-                      Se încarcă PDF-ul...
-                    </span>
-                  </div>
-                ) : (
-                  <>
-                    <span style={{ fontSize: 36, display: "block", marginBottom: 8 }}>
-                      {draggingOver ? "📥" : "📄"}
-                    </span>
-                    <span style={{
-                      fontSize: 15, fontWeight: 600, color: "#2a1f0f",
-                      fontFamily: "'Source Sans 3', sans-serif",
-                      display: "block", marginBottom: 4,
-                    }}>
-                      {draggingOver ? "Eliberează pentru a încărca" : "Trage un fișier PDF aici"}
-                    </span>
-                    <span style={{
-                      fontSize: 13, color: "#8a7e6e",
-                      fontFamily: "'Source Sans 3', sans-serif",
-                    }}>
-                      sau <span style={{ color: "#c4a265", fontWeight: 600, textDecoration: "underline" }}>click pentru a selecta</span> din calculator
-                    </span>
-                  </>
-                )}
-              </div>
-              <input
-                ref={pdfInputRef}
-                type="file"
-                accept=".pdf,application/pdf"
-                onChange={handlePdfUpload}
-                style={{ display: "none" }}
-              />
-
-              {/* Divider */}
-              <div style={{
-                display: "flex", alignItems: "center", gap: 14,
-                margin: "4px 0 12px",
-              }}>
-                <div style={{ flex: 1, height: 1, background: "#e0d8c8" }} />
-                <span style={{ fontSize: 12, color: "#a09888", fontFamily: "'Source Sans 3', sans-serif", fontWeight: 500 }}>SAU lipește text</span>
-                <div style={{ flex: 1, height: 1, background: "#e0d8c8" }} />
-              </div>
-
-              {/* Text paste area */}
-              <textarea
-                value={bookContent}
-                onChange={e => setBookContent(e.target.value)}
-                placeholder="Lipește aici conținutul cărții sau manualului (text copiat din carte digitală, manual scanat etc.)..."
-                rows={3}
-                style={{
-                  width: "100%",
-                  padding: "12px 14px",
-                  border: "1.5px solid #e0d8c8", borderRadius: 10,
-                  fontSize: 13, fontFamily: "'Source Sans 3', sans-serif",
-                  background: "#fff", outline: "none",
-                  resize: "vertical", lineHeight: 1.55,
-                  boxSizing: "border-box",
-                }}
-              />
-              <button
-                onClick={addBook}
-                disabled={!bookTitle.trim() || !bookContent.trim()}
-                style={{
-                  marginTop: 10, padding: "10px 24px", borderRadius: 10,
-                  border: "none", cursor: "pointer",
-                  background: bookTitle.trim() && bookContent.trim()
-                    ? "linear-gradient(135deg, #c4a265, #a8893e)" : "#ddd",
-                  color: "#fff", fontSize: 13.5, fontWeight: 600,
-                  fontFamily: "'Source Sans 3', sans-serif",
-                  transition: "all 0.2s",
-                }}
-              >
-                + Adaugă text manual
-              </button>
-            </div>
-
-            {/* Book list */}
-            {books.length > 0 ? (
-              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                {books.map(b => (
-                  <div key={b.id} style={{
-                    background: "#faf8f3",
-                    borderRadius: 10, padding: "14px 16px",
-                    border: "1px solid #e8e0d0",
-                  }}>
-                    <div style={{
-                      display: "flex", justifyContent: "space-between",
-                      alignItems: "center", gap: 12,
-                    }}>
-                      <div
-                        style={{ flex: 1, cursor: "pointer", display: "flex", alignItems: "center", gap: 10 }}
-                        onClick={() => setExpandedBook(expandedBook === b.id ? null : b.id)}
-                      >
-                        <span style={{ fontSize: 20 }}>{b.isPdf ? "📄" : "📗"}</span>
-                        <div>
-                          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                            <span style={{
-                              fontWeight: 600, fontSize: 14, color: "#2a1f0f",
-                              fontFamily: "'Playfair Display', serif",
-                            }}>{b.title}</span>
-                            {b.isPdf && (
-                              <span style={{
-                                background: "rgba(196,162,101,0.15)",
-                                color: "#a8893e", fontSize: 10, fontWeight: 700,
-                                padding: "2px 7px", borderRadius: 4,
-                                fontFamily: "'Source Sans 3', sans-serif",
-                                letterSpacing: "0.5px",
-                              }}>PDF</span>
-                            )}
-                          </div>
-                          <div style={{ fontSize: 11.5, color: "#8a7e6e", marginTop: 2 }}>
-                            {b.isPdf
-                              ? `${b.fileName} · ${(b.fileSize / 1024).toFixed(0)} KB`
-                              : `${b.content.split(/\s+/).length.toLocaleString()} cuvinte · ${b.content.length.toLocaleString()} caractere`
-                            }
-                          </div>
-                        </div>
-                        <span style={{
-                          fontSize: 11, color: "#c4a265", marginLeft: "auto",
-                          fontWeight: 500,
-                        }}>
-                          {expandedBook === b.id ? "▲ ascunde" : (b.isPdf ? "▼ detalii" : "▼ previzualizare")}
-                        </span>
-                      </div>
-                      <button onClick={() => removeBook(b.id)} style={{
-                        background: "rgba(180,60,60,0.06)",
-                        border: "1px solid rgba(180,60,60,0.12)",
-                        borderRadius: 8, padding: "5px 14px",
-                        fontSize: 12.5, color: "#b43c3c",
-                        cursor: "pointer", fontWeight: 500,
-                        fontFamily: "'Source Sans 3', sans-serif",
-                        flexShrink: 0,
-                      }}>✕ Șterge</button>
-                    </div>
-                    {expandedBook === b.id && (
-                      <div style={{
-                        marginTop: 12, padding: 14,
-                        background: "#fff", borderRadius: 8,
-                        fontSize: 12.5, color: "#5a5044",
-                        lineHeight: 1.65, maxHeight: 180,
-                        overflow: "auto", border: "1px solid #e8e0d0",
-                        whiteSpace: "pre-wrap",
-                      }}>
-                        {b.isPdf ? (
-                          <div style={{ textAlign: "center", padding: "20px 0", color: "#8a7e6e" }}>
-                            <span style={{ fontSize: 32, display: "block", marginBottom: 8 }}>📄</span>
-                            Fișier PDF încărcat: <strong>{b.fileName}</strong><br />
-                            Conținutul va fi trimis direct la AI pentru procesare.
-                          </div>
-                        ) : (
-                          <>{b.content.substring(0, 3000)}{b.content.length > 3000 ? "\n\n... (conținut trunchiat pentru previzualizare)" : ""}</>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div style={{
-                textAlign: "center", padding: "12px 0 4px", color: "#a09888",
-                fontSize: 13,
-              }}>
-                Niciun manual adăugat încă. Materialele vor fi generate doar pe baza textului lecției.
-              </div>
-            )}
-          </div>
-        </div>
-      )}
 
       {/* Main */}
       <main style={{
@@ -585,8 +289,8 @@ export default function App() {
             value={lessonText}
             onChange={e => setLessonText(e.target.value)}
             placeholder={books.length > 0
-              ? `Scrie titlul lecției (ex: „Substantivul", „Verbul — moduri și timpuri", „Propoziția subordonată") sau lipește textul complet al lecției.\n\nAI-ul va căuta subiectul în manualele încărcate și va genera materialele pe baza lor.`
-              : `Lipește aici textul lecției, sau scrie titlul unei lecții...\n\nExemplu: Revoluția Industrială a reprezentat o perioadă de transformare majoră în Europa, începând cu a doua jumătate a secolului al XVIII-lea...\n\n💡 Sfat: Încarcă un manual PDF din „Bibliotecă manuale" pentru rezultate bazate pe surse concrete.`}
+              ? `Scrie titlul lecției (ex: „Substantivul", „Verbul — moduri și timpuri") sau lipește textul complet al lecției.\n\nAI-ul va căuta subiectul în PDF-urile încărcate și va genera materialele pe baza lor.`
+              : `Lipește aici textul lecției, sau scrie titlul unei lecții...\n\nExemplu: Revoluția Industrială a reprezentat o perioadă de transformare majoră în Europa, începând cu a doua jumătate a secolului al XVIII-lea...\n\n💡 Sfat: Apasă „📄 Adaugă PDF" pentru a încărca un manual de referință.`}
             rows={8}
             style={{
               width: "100%", border: "none", outline: "none",
@@ -620,6 +324,29 @@ export default function App() {
               }}>
                 🖼️ Adaugă imagine
               </button>
+              <button
+                onClick={() => pdfInputRef.current?.click()}
+                disabled={uploadingPdf}
+                style={{
+                  display: "flex", alignItems: "center", gap: 6,
+                  padding: "7px 14px", borderRadius: 8,
+                  border: "1px solid #c4a265", background: books.length > 0 ? "rgba(196,162,101,0.08)" : "#fff",
+                  fontSize: 13, color: "#a8893e", cursor: "pointer",
+                  fontFamily: "'Source Sans 3', sans-serif",
+                  fontWeight: 500,
+                }}>
+                {uploadingPdf
+                  ? <><span style={{ animation: "spin 1s linear infinite", display: "inline-block" }}>⏳</span> Se încarcă...</>
+                  : <>📄 Adaugă PDF</>
+                }
+              </button>
+              <input
+                ref={pdfInputRef}
+                type="file"
+                accept=".pdf,application/pdf"
+                onChange={handlePdfUpload}
+                style={{ display: "none" }}
+              />
             </div>
             <button
               onClick={() => generate("all")}
@@ -647,6 +374,40 @@ export default function App() {
               )}
             </button>
           </div>
+          {/* Loaded PDFs */}
+          {books.length > 0 && (
+            <div style={{
+              padding: "8px 20px 12px",
+              borderTop: "1px solid #f0ebe0",
+              display: "flex", alignItems: "center", gap: 8,
+              flexWrap: "wrap",
+            }}>
+              <span style={{ fontSize: 11.5, color: "#8a7e6e", fontFamily: "'Source Sans 3', sans-serif" }}>
+                📚 Materiale de referință:
+              </span>
+              {books.map(b => (
+                <span key={b.id} style={{
+                  display: "inline-flex", alignItems: "center", gap: 5,
+                  background: "rgba(196,162,101,0.1)",
+                  border: "1px solid rgba(196,162,101,0.25)",
+                  borderRadius: 6, padding: "3px 10px",
+                  fontSize: 12, color: "#6b5a3d",
+                  fontFamily: "'Source Sans 3', sans-serif",
+                  fontWeight: 500,
+                }}>
+                  📄 {b.title}
+                  <span
+                    onClick={() => removeBook(b.id)}
+                    style={{
+                      cursor: "pointer", color: "#b43c3c",
+                      fontSize: 14, lineHeight: 1, marginLeft: 2,
+                      fontWeight: 400,
+                    }}
+                  >×</span>
+                </span>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Counters */}
