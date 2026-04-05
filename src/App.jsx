@@ -89,23 +89,27 @@ function md(text) {
 /* ── DOCX download (HTML→Word-compatible .doc) ── */
 function downloadAsDocx(markdownText) {
   const htmlContent = md(markdownText);
-  const docTemplate = `
-<!DOCTYPE html>
-<html xmlns:o="urn:schemas-microsoft-com:office:office"
-      xmlns:w="urn:schemas-microsoft-com:office:word"
-      xmlns="http://www.w3.org/TR/REC-html40">
-<head>
-<meta charset="utf-8">
-<style>
-  body {
-    font-family: 'Segoe UI', Calibri, Arial, sans-serif;
-    font-size: 11pt;
-    line-height: 1.6;
-    color: #1a1a2e;
-    max-width: 700px;
-    margin: 0 auto;
-    padding: 40px;
+  const docTemplate = `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40"><head><meta charset="utf-8"><style>body{font-family:Calibri,Arial,sans-serif;font-size:11pt;line-height:1.6;color:#1a1a2e;padding:40px}h1{font-size:18pt;color:#B8621B;margin-top:24pt;margin-bottom:8pt;border-bottom:2px solid #E8E2D8;padding-bottom:6pt}h2{font-size:15pt;color:#B8621B;margin-top:20pt;margin-bottom:6pt}h3{font-size:13pt;color:#1a1a2e;margin-top:16pt;margin-bottom:6pt}p{margin-bottom:6pt}strong{color:#B8621B}ul{padding-left:20pt;margin-bottom:8pt}li{margin-bottom:3pt}hr{border:none;border-top:1px solid #E8E2D8;margin:16pt 0}</style></head><body><div style="text-align:center;margin-bottom:24pt;padding-bottom:16pt;border-bottom:3px solid #B8621B"><h1 style="border-bottom:none;font-size:20pt;margin-bottom:4pt">EduPrompt Teacher Assistant</h1><p style="color:#4A4A6A;font-size:10pt">Materiale didactice generate automat</p></div>${htmlContent}<div style="margin-top:32pt;padding-top:12pt;border-top:2px solid #E8E2D8;text-align:center"><p style="color:#4A4A6A;font-size:9pt">Generat cu EduPrompt Teacher Assistant</p></div></body></html>`;
+
+  try {
+    const blob = new Blob([docTemplate], { type: 'application/msword' });
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    const now = new Date();
+    const d = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0') + '-' + String(now.getDate()).padStart(2,'0');
+    link.setAttribute('download', 'materiale-didactice-' + d + '.doc');
+    link.style.display = 'none';
+    document.body.appendChild(link);
+    link.click();
+    setTimeout(() => {
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+    }, 100);
+  } catch (err) {
+    alert('Eroare la descărcare: ' + err.message);
   }
+}
   h1 {
     font-family: 'Georgia', serif;
     font-size: 18pt;
