@@ -1,682 +1,612 @@
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useCallback } from "react";
 
-const SYSTEM_PROMPT = `Rolul tău: Ești un asistent specializat în educație și formare, care ajută profesorii și formatorii să creeze rapid materiale didactice de calitate. Numele tău este EduPrompt Teacher Assistant.
+const GENERATE_PROMPT = (type, grilaCount, analizaCount, booksContext) => {
+  const bookSection = booksContext
+    ? `\n\nCONȚINUT DIN CĂRȚI/MANUALE DE REFERINȚĂ:\n${booksContext}\n\nFolosește informațiile din cărțile de referință pentru a îmbogăți și completa materialele generate. Asigură-te că exercițiile și întrebările sunt aliniate cu terminologia și abordarea din manuale.`
+    : "";
 
-Scopul aplicației: Primești de la utilizator un text educațional (lecție, fragment din programă, suport de curs) SAU o imagine cu textul lecției și generezi automat resurse complete pentru predare și evaluare.
+  const prompts = {
+    sinteza: `Generează o SINTEZĂ A MATERIALULUI clară a lecției și 8-10 ÎNTREBĂRI de verificare (mixte: deschise și semi-deschise). Formatează frumos cu titluri și numere.${bookSection}`,
+    grila: `Generează exact ${grilaCount} ITEMI GRILĂ (întrebări cu 4 variante de răspuns A/B/C/D). La final, pune răspunsurile corecte. Numerotează-le.${bookSection}`,
+    analiza: `Generează exact ${analizaCount} EXERCIȚII DE ANALIZĂ aprofundată (comparații, studii de caz, eseuri scurte, analiză critică). Numerotează-le și descrie ce se așteaptă de la elev.${bookSection}`,
+    fise: `Generează FIȘE DIFERENȚIATE pe 3 niveluri:
+- 🟢 NIVEL BAZĂ (recuperare): exerciții simple, completare, adevărat/fals
+- 🟡 NIVEL MEDIU (consolidare): exerciții de aplicare, răspunsuri scurte
+- 🔴 NIVEL AVANSAT (performanță): analiză, sinteză, argumentare
+Fiecare nivel să aibă 3-4 exerciții.${bookSection}`,
+    all: `Generează TOATE materialele didactice pentru lecția dată:
 
-Dacă primești o imagine, mai întâi transcrie/extrage conținutul educațional din imagine, apoi generează materialele.
+1. **SINTEZA MATERIALULUI** - sinteză clară a lecției
+2. **ÎNTREBĂRI DE VERIFICARE** - 6-8 întrebări mixte
+3. **ITEMI GRILĂ** - ${grilaCount} întrebări cu 4 variante (A/B/C/D) + răspunsuri la final
+4. **EXERCIȚII DE ANALIZĂ** - ${analizaCount} exerciții de analiză aprofundată
+5. **FIȘE DIFERENȚIATE** pe 3 niveluri:
+   - 🟢 BAZĂ: 3 exerciții simple
+   - 🟡 MEDIU: 3 exerciții de aplicare
+   - 🔴 AVANSAT: 3 exerciții de analiză/sinteză
 
-Instrucțiuni generale: Pentru fiecare material primit, vei genera întotdeauna următoarele, într-un format clar, structurat și ușor de copiat:
-
-1. **Rezumatul lecției** – concis, 5–7 rânduri
-2. **5 întrebări de verificare a înțelegerii** – întrebări deschise, cu răspunsuri așteptate
-3. **5 itemi grilă** – întrebări cu variante de răspuns (A, B, C, D) și răspunsul corect marcat
-4. **3 exerciții de analiză** – activități care solicită gândire critică, aplicare sau interpretare
-5. **O fișă de lucru pe două niveluri de dificultate** – una pentru nivel mediu, una pentru nivel avansat
-6. **O temă pentru acasă** – scurtă, relevantă și aplicabilă
-
-La finalul răspunsului, adaugă o scurtă evaluare a eficienței procesului (timp estimat economisit, calitate, observații).
-
-Formatează răspunsul folosind Markdown clar, cu headere, liste numerotate și bold pentru secțiuni. Fii detaliat și profesionist. Răspunde DOAR în limba română.`;
-
-const FOCUSED_PROMPTS = {
-  rezumat: `Ești un profesor expert. Dacă primești o imagine, mai întâi extrage conținutul educațional din ea. Apoi generează DOAR:
-1. **Rezumatul lecției** – concis, 5–7 rânduri
-2. **5 întrebări de verificare a înțelegerii** – întrebări deschise, cu răspunsuri așteptate
-
-Formatează răspunsul folosind Markdown clar. Răspunde DOAR în limba română.`,
-
-  grila: (num) => `Ești un profesor expert. Dacă primești o imagine, mai întâi extrage conținutul educațional din ea. Apoi generează EXACT ${num} ITEMI GRILĂ.
-
-Fiecare item trebuie să aibă:
-- Întrebarea
-- 4 variante de răspuns (A, B, C, D)
-- Răspunsul corect marcat cu ✔️
-
-Formatează răspunsul folosind Markdown clar. Răspunde DOAR în limba română.`,
-
-  analiza: (num) => `Ești un profesor expert. Dacă primești o imagine, mai întâi extrage conținutul educațional din ea. Apoi generează EXACT ${num} EXERCIȚII DE ANALIZĂ complexe.
-
-Exercițiile trebuie să solicite gândire critică, aplicare sau interpretare. Include exerciții variate: comparație, argumentare, sinteză, evaluare.
-
-Pentru fiecare exercițiu include:
-- Titlul exercițiului
-- Cerința detaliată
-- Indicații pentru rezolvare
-
-Formatează răspunsul folosind Markdown clar. Răspunde DOAR în limba română.`,
-
-  fise: `Ești un profesor expert. Dacă primești o imagine, mai întâi extrage conținutul educațional din ea. Apoi generează DOAR FIȘE DE LUCRU DIFERENȚIATE pe 3 niveluri:
-
-1. **Nivel de bază** (pentru elevii care au nevoie de sprijin suplimentar) – exerciții simple, cu suport
-2. **Nivel mediu** (pentru majoritatea elevilor) – exerciții moderate
-3. **Nivel avansat** (pentru elevii performanți) – exerciții provocatoare, de aprofundare
-
-Fiecare fișă trebuie să conțină 3-4 exerciții.
-
-Formatează răspunsul folosind Markdown clar. Răspunde DOAR în limba română.`
+Formatează totul clar cu titluri, numerotare și separatoare.${bookSection}`,
+  };
+  return prompts[type] || prompts.all;
 };
 
-const OPTION_PROMPTS = {
-  1: "Adaptează materialele generate anterior pe niveluri de dificultate: nivel de bază (pentru elevi cu dificultăți de învățare), nivel mediu și nivel avansat (pentru elevi performanți). Păstrează formatul Markdown clar.",
-  2: "Transformă conținutul generat anterior într-un mini-test de 10 minute cu barem de corectare detaliat. Include: 5 itemi grilă (câte 1 punct fiecare), 2 întrebări cu răspuns scurt (câte 1.5 puncte fiecare) și 1 subiect de tip eseu scurt (2 puncte). Total: 10 puncte. Se acordă 1 punct din oficiu. Adaugă baremul complet.",
-  3: "Analizează critic materialele generate anterior și oferă feedback constructiv: ce este bine, ce poate fi îmbunătățit, sugestii concrete de reformulare, potențiale probleme pedagogice și recomandări de bune practici.",
-  4: "Generează o nouă fișă de lucru pe o temă conexă/complementară celei originale, păstrând același format și nivel de calitate."
-};
-
-/* ── tiny markdown→HTML ── */
-function md(text) {
-  if (!text) return "";
-  let h = text
-    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
-    .replace(/^### (.+)$/gm, '<h3>$1</h3>')
-    .replace(/^## (.+)$/gm, '<h2>$1</h2>')
-    .replace(/^# (.+)$/gm, '<h1>$1</h1>')
-    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-    .replace(/\*(.+?)\*/g, '<em>$1</em>')
-    .replace(/^---$/gm, '<hr/>')
-    .replace(/^[-•] (.+)$/gm, '<li>$1</li>')
-    .replace(/^(\d+)\. (.+)$/gm, '<li>$2</li>');
-  h = h.replace(/((?:<li>.*<\/li>\n?)+)/g, '<ul>$1</ul>');
-  h = h.split(/\n{2,}/).map(p => {
-    p = p.trim();
-    if (/^<[hul]/.test(p) || /^<hr/.test(p)) return p;
-    return `<p>${p.replace(/\n/g, '<br/>')}</p>`;
-  }).join('');
-  return h;
-}
-
-/* ── DOCX download (HTML→Word-compatible .doc) ── */
-function downloadAsDocx(markdownText) {
-  const htmlContent = md(markdownText);
-  const docTemplate = `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40"><head><meta charset="utf-8"><style>body{font-family:Calibri,Arial,sans-serif;font-size:11pt;line-height:1.6;color:#1a1a2e;padding:40px}h1{font-size:18pt;color:#B8621B;margin-top:24pt;margin-bottom:8pt;border-bottom:2px solid #E8E2D8;padding-bottom:6pt}h2{font-size:15pt;color:#B8621B;margin-top:20pt;margin-bottom:6pt}h3{font-size:13pt;color:#1a1a2e;margin-top:16pt;margin-bottom:6pt}p{margin-bottom:6pt}strong{color:#B8621B}ul{padding-left:20pt;margin-bottom:8pt}li{margin-bottom:3pt}hr{border:none;border-top:1px solid #E8E2D8;margin:16pt 0}</style></head><body><div style="text-align:center;margin-bottom:24pt;padding-bottom:16pt;border-bottom:3px solid #B8621B"><h1 style="border-bottom:none;font-size:20pt;margin-bottom:4pt">EduPrompt Teacher Assistant</h1><p style="color:#4A4A6A;font-size:10pt">Materiale didactice generate automat</p></div>${htmlContent}<div style="margin-top:32pt;padding-top:12pt;border-top:2px solid #E8E2D8;text-align:center"><p style="color:#4A4A6A;font-size:9pt">Generat cu EduPrompt Teacher Assistant</p></div></body></html>`;
-
-  try {
-    const blob = new Blob([docTemplate], { type: 'application/msword' });
-    const url = window.URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    const now = new Date();
-    const d = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0') + '-' + String(now.getDate()).padStart(2,'0');
-    link.setAttribute('download', 'materiale-didactice-' + d + '.doc');
-    link.style.display = 'none';
-    document.body.appendChild(link);
-    link.click();
-    setTimeout(() => {
-      document.body.removeChild(link);
-      window.URL.revokeObjectURL(url);
-    }, 100);
-  } catch (err) {
-    alert('Eroare la descărcare: ' + err.message);
-  }
-}
-  h1 {
-    font-family: 'Georgia', serif;
-    font-size: 18pt;
-    color: #B8621B;
-    margin-top: 24pt;
-    margin-bottom: 8pt;
-    border-bottom: 2px solid #E8E2D8;
-    padding-bottom: 6pt;
-  }
-  h2 {
-    font-family: 'Georgia', serif;
-    font-size: 15pt;
-    color: #B8621B;
-    margin-top: 20pt;
-    margin-bottom: 6pt;
-  }
-  h3 {
-    font-family: 'Georgia', serif;
-    font-size: 13pt;
-    color: #1a1a2e;
-    margin-top: 16pt;
-    margin-bottom: 6pt;
-  }
-  p {
-    font-size: 11pt;
-    margin-bottom: 6pt;
-  }
-  strong {
-    color: #B8621B;
-  }
-  ul {
-    padding-left: 20pt;
-    margin-bottom: 8pt;
-  }
-  li {
-    font-size: 11pt;
-    margin-bottom: 3pt;
-    line-height: 1.6;
-  }
-  hr {
-    border: none;
-    border-top: 1px solid #E8E2D8;
-    margin: 16pt 0;
-  }
-</style>
-</head>
-<body>
-<div style="text-align: center; margin-bottom: 24pt; padding-bottom: 16pt; border-bottom: 3px solid #B8621B;">
-  <h1 style="border-bottom: none; color: #B8621B; font-size: 20pt; margin-bottom: 4pt;">EduPrompt Teacher Assistant</h1>
-  <p style="color: #4A4A6A; font-size: 10pt;">Materiale didactice generate automat</p>
-</div>
-${htmlContent}
-<div style="margin-top: 32pt; padding-top: 12pt; border-top: 2px solid #E8E2D8; text-align: center;">
-  <p style="color: #4A4A6A; font-size: 9pt;">Generat cu EduPrompt Teacher Assistant</p>
-</div>
-</body>
-</html>`;
-
-  const blob = new Blob(['\ufeff', docTemplate], { type: 'application/msword' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  const now = new Date();
-  const dateStr = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
-  a.download = `materiale-didactice-${dateStr}.doc`;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
-}
-
-/* ── icons ── */
-const BookIcon = () => (
-  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>
-  </svg>
-);
-const SparkleIcon = () => (
-  <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
-    <path d="M12 2l2.4 7.2L22 12l-7.6 2.8L12 22l-2.4-7.2L2 12l7.6-2.8z"/>
-  </svg>
-);
-const CopyIcon = () => (
-  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
-  </svg>
-);
-const CheckIcon = () => (
-  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-    <polyline points="20 6 9 17 4 12"/>
-  </svg>
-);
-const DownloadIcon = () => (
-  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
-  </svg>
-);
-const ImageIcon = () => (
-  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/>
-  </svg>
-);
-const XIcon = () => (
-  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-    <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
-  </svg>
-);
-
-const FONTS_URL = "https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap";
-
-export default function EduPromptApp() {
-  const [inputText, setInputText] = useState("");
-  const [messages, setMessages] = useState([]);
-  const [result, setResult] = useState("");
+export default function App() {
+  const [lessonText, setLessonText] = useState("");
+  const [grilaCount, setGrilaCount] = useState(5);
+  const [analizaCount, setAnalizaCount] = useState(3);
+  const [activeTab, setActiveTab] = useState("sinteza");
+  const [results, setResults] = useState({});
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
-  const [copied, setCopied] = useState(false);
-  const [phase, setPhase] = useState("input");
-  const [loadingMsg, setLoadingMsg] = useState(0);
-  const [activeChip, setActiveChip] = useState(null);
-  const [numGrila, setNumGrila] = useState(5);
-  const [numAnaliza, setNumAnaliza] = useState(3);
-  const [imageData, setImageData] = useState(null);
-  const [dragOver, setDragOver] = useState(false);
-  const resultRef = useRef(null);
-  const fileInputRef = useRef(null);
+  const [loadingType, setLoadingType] = useState("");
+  const [books, setBooks] = useState([]);
+  const [showBookPanel, setShowBookPanel] = useState(false);
+  const [bookTitle, setBookTitle] = useState("");
+  const [bookContent, setBookContent] = useState("");
+  const [expandedBook, setExpandedBook] = useState(null);
 
-  const loadingMessages = [
-    "Analizez conținutul lecției...",
-    "Formulez întrebările de verificare...",
-    "Construiesc itemii de tip grilă...",
-    "Pregătesc exercițiile de analiză...",
-    "Finalizez fișele de lucru...",
-    "Ultimele retușuri la materiale..."
-  ];
+  const buildBooksContext = useCallback(() => {
+    if (books.length === 0) return "";
+    return books.map((b, i) =>
+      `--- MANUAL ${i + 1}: "${b.title}" ---\n${b.content.substring(0, 8000)}\n--- SFÂRȘIT ---`
+    ).join("\n\n");
+  }, [books]);
 
-  useEffect(() => {
-    if (!loading) return;
-    const iv = setInterval(() => setLoadingMsg(p => (p + 1) % loadingMessages.length), 2800);
-    return () => clearInterval(iv);
-  }, [loading]);
-
-  const processImage = useCallback((file) => {
-    if (!file || !file.type.startsWith("image/")) return;
-    if (file.size > 20 * 1024 * 1024) {
-      setError("Imaginea este prea mare. Limita este 20MB.");
-      return;
-    }
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      const dataUrl = e.target.result;
-      const base64 = dataUrl.split(",")[1];
-      setImageData({ base64, mediaType: file.type, preview: dataUrl, name: file.name });
-    };
-    reader.readAsDataURL(file);
-  }, []);
-
-  useEffect(() => {
-    const handlePaste = (e) => {
-      if (phase !== "input") return;
-      const items = e.clipboardData?.items;
-      if (!items) return;
-      for (const item of items) {
-        if (item.type.startsWith("image/")) {
-          e.preventDefault();
-          processImage(item.getAsFile());
-          return;
-        }
-      }
-    };
-    document.addEventListener("paste", handlePaste);
-    return () => document.removeEventListener("paste", handlePaste);
-  }, [phase, processImage]);
-
-  function buildUserContent(promptText) {
-    const parts = [];
-    if (imageData) {
-      parts.push({
-        type: "image",
-        source: { type: "base64", media_type: imageData.mediaType, data: imageData.base64 }
-      });
-    }
-    parts.push({ type: "text", text: promptText });
-    return parts;
-  }
-
-  async function callAPI(userContent, systemPrompt, history = []) {
+  const generate = async (type) => {
+    if (!lessonText.trim()) return;
     setLoading(true);
-    setError("");
-    setLoadingMsg(0);
+    setLoadingType(type);
+    if (type !== "all") setActiveTab(type);
+
     try {
-      const msgs = [...history, { role: "user", content: userContent }];
-      const res = await fetch("/api/chat", {
+      const booksCtx = buildBooksContext();
+      const prompt = GENERATE_PROMPT(type, grilaCount, analizaCount, booksCtx);
+
+      const res = await fetch("https://api.anthropic.com/v1/messages", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           model: "claude-sonnet-4-20250514",
-          max_tokens: 4096,
-          system: systemPrompt,
-          messages: msgs
-        })
+          max_tokens: 4000,
+          system: `Ești un profesor expert care creează materiale didactice de calitate superioară. Răspunde DOAR în limba română. Formatează răspunsul cu markdown (titluri, liste, bold). Fii creativ, riguros și adaptat nivelului liceal/gimnazial.`,
+          messages: [
+            { role: "user", content: `LECȚIA:\n${lessonText}\n\nINSTRUCȚIUNI:\n${prompt}` }
+          ],
+        }),
       });
-      if (!res.ok) throw new Error(`Eroare API: ${res.status}`);
       const data = await res.json();
-      const text = data.content?.map(b => b.text || "").join("\n") || "Nu s-a primit răspuns.";
-      const newMessages = [...msgs, { role: "assistant", content: text }];
-      setMessages(newMessages);
-      setResult(text);
-      setPhase("result");
-      setTimeout(() => resultRef.current?.scrollTo({ top: 0, behavior: "smooth" }), 100);
-    } catch (e) {
-      setError(e.message || "Eroare necunoscută.");
+      const text = data.content?.map(c => c.text || "").join("") || "Eroare la generare.";
+
+      if (type === "all") {
+        setResults({ sinteza: text, grila: text, analiza: text, fise: text, all: text });
+        setActiveTab("sinteza");
+      } else {
+        setResults(prev => ({ ...prev, [type]: text }));
+      }
+    } catch (err) {
+      setResults(prev => ({ ...prev, [type]: "⚠️ Eroare de conexiune. Încearcă din nou." }));
     } finally {
       setLoading(false);
+      setLoadingType("");
     }
-  }
+  };
 
-  function handleGenerate() {
-    if (!inputText.trim() && !imageData) return;
-    setActiveChip(null);
-    const prompt = inputText.trim()
-      ? `Iată textul lecției pe care doresc să-l prelucrezi:\n\n${inputText}`
-      : "Analizează imaginea atașată care conține textul lecției și generează materialele didactice.";
-    callAPI(buildUserContent(prompt), SYSTEM_PROMPT);
-  }
+  const addBook = () => {
+    if (!bookTitle.trim() || !bookContent.trim()) return;
+    setBooks(prev => [...prev, { id: Date.now(), title: bookTitle.trim(), content: bookContent.trim() }]);
+    setBookTitle("");
+    setBookContent("");
+  };
 
-  function handleFocusedGenerate(type) {
-    if (!inputText.trim() && !imageData) return;
-    setActiveChip(type);
-    let systemPrompt;
-    if (type === "grila") systemPrompt = FOCUSED_PROMPTS.grila(numGrila);
-    else if (type === "analiza") systemPrompt = FOCUSED_PROMPTS.analiza(numAnaliza);
-    else systemPrompt = FOCUSED_PROMPTS[type];
-    const prompt = inputText.trim()
-      ? `Iată textul lecției:\n\n${inputText}`
-      : "Analizează imaginea atașată care conține textul lecției.";
-    callAPI(buildUserContent(prompt), systemPrompt);
-  }
+  const removeBook = (id) => setBooks(prev => prev.filter(b => b.id !== id));
 
-  function handleOption(opt) {
-    callAPI(OPTION_PROMPTS[opt], SYSTEM_PROMPT, messages);
-  }
+  const formatMd = (text) => {
+    if (!text) return "";
+    return text
+      .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+      .replace(/\*(.*?)\*/g, '<em>$1</em>')
+      .replace(/`(.*?)`/g, '<code style="background:rgba(0,0,0,0.06);padding:1px 5px;border-radius:3px;font-size:0.92em">$1</code>')
+      .replace(/^#### (.*$)/gm, '<h4 style="margin:14px 0 6px;font-size:1em;color:#6b5a3d">$1</h4>')
+      .replace(/^### (.*$)/gm, '<h3 style="margin:18px 0 8px;font-size:1.1em;color:#4a3f2f">$1</h3>')
+      .replace(/^## (.*$)/gm, '<h2 style="margin:22px 0 10px;font-size:1.25em;color:#3a2f1f;border-bottom:1px solid #e8e0d0;padding-bottom:6px">$1</h2>')
+      .replace(/^# (.*$)/gm, '<h1 style="margin:24px 0 12px;font-size:1.4em;color:#2a1f0f">$1</h1>')
+      .replace(/^- (.*$)/gm, '<div style="padding-left:18px;margin:4px 0;position:relative"><span style="position:absolute;left:4px;color:#c4a265">•</span>$1</div>')
+      .replace(/^\d+\. (.*$)/gm, (m, p1) => {
+        const num = m.match(/^\d+/)[0];
+        return `<div style="padding-left:24px;margin:4px 0;position:relative"><span style="position:absolute;left:0;color:#c4a265;font-weight:600">${num}.</span>${p1}</div>`;
+      })
+      .replace(/\n\n/g, '<div style="height:12px"></div>')
+      .replace(/\n/g, '<br/>');
+  };
 
-  function handleCopy() {
-    navigator.clipboard.writeText(result).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    });
-  }
+  const tabs = [
+    { key: "sinteza", label: "Sinteza materialului & Întrebări", icon: "📄" },
+    { key: "grila", label: `Itemi grilă (${grilaCount})`, icon: "☑️" },
+    { key: "analiza", label: `Exerciții de analiză (${analizaCount})`, icon: "🧠" },
+    { key: "fise", label: "Fișe diferențiate", icon: "📋" },
+  ];
 
-  function handleReset() {
-    setPhase("input");
-    setResult("");
-    setMessages([]);
-    setInputText("");
-    setError("");
-    setActiveChip(null);
-    setImageData(null);
-  }
+  const counterBtnStyle = {
+    width: 28, height: 28, borderRadius: "50%",
+    border: "1.5px solid #e0d8c8", background: "#fff",
+    fontSize: 16, cursor: "pointer",
+    display: "inline-flex", alignItems: "center", justifyContent: "center",
+    color: "#5a5044", fontWeight: 400,
+    lineHeight: 1,
+  };
 
-  function handleDragOver(e) { e.preventDefault(); setDragOver(true); }
-  function handleDragLeave(e) { e.preventDefault(); setDragOver(false); }
-  function handleDrop(e) {
-    e.preventDefault(); setDragOver(false);
-    const file = e.dataTransfer?.files?.[0];
-    if (file) processImage(file);
-  }
-
-  const hasInput = inputText.trim() || imageData;
+  const Counter = ({ label, value, onChange, color }) => (
+    <div style={{
+      display: "inline-flex", alignItems: "center", gap: 8,
+      background: "#fff", borderRadius: 24, padding: "6px 16px",
+      border: "1px solid #e8e0d0", fontSize: 13.5,
+      fontFamily: "'Source Sans 3', sans-serif",
+    }}>
+      <span style={{
+        width: 18, height: 18, borderRadius: 4, background: color,
+        display: "inline-flex", alignItems: "center", justifyContent: "center",
+        fontSize: 10, color: "#fff",
+      }}>✓</span>
+      <span style={{ color: "#5a5044" }}>{label}:</span>
+      <button onClick={() => onChange(Math.max(1, value - 1))} style={counterBtnStyle}>–</button>
+      <span style={{ fontWeight: 700, minWidth: 20, textAlign: "center", color: "#2a1f0f" }}>{value}</span>
+      <button onClick={() => onChange(Math.min(20, value + 1))} style={counterBtnStyle}>+</button>
+    </div>
+  );
 
   return (
-    <>
-      <link href={FONTS_URL} rel="stylesheet" />
-      <style>{`
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        :root {
-          --bg: #FAF7F2; --surface: #FFFFFF; --ink: #1A1A2E; --ink2: #4A4A6A;
-          --accent: #B8621B; --accent2: #D4881C; --accent-soft: #FFF3E6;
-          --border: #E8E2D8; --green: #2D8F5E; --green-soft: #E8F5EE;
-          --blue: #2563EB; --blue-soft: #EFF6FF; --purple: #7C3AED; --purple-soft: #F3EEFF;
-          --red: #DC2626; --red-soft: #FEF2F2; --radius: 12px;
-          --shadow: 0 1px 3px rgba(0,0,0,0.06), 0 4px 12px rgba(0,0,0,0.04);
-          --font-display: 'DM Serif Display', Georgia, serif;
-          --font-body: 'Plus Jakarta Sans', -apple-system, sans-serif;
-        }
-        html, body, #root { height: 100%; }
-        body { background: var(--bg); font-family: var(--font-body); color: var(--ink); }
-        .app-shell { display: flex; flex-direction: column; height: 100vh; max-height: 100vh; overflow: hidden; background: var(--bg); }
+    <div style={{
+      minHeight: "100vh",
+      background: "#faf8f3",
+      fontFamily: "'Source Sans 3', 'Segoe UI', sans-serif",
+    }}>
+      <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700;800&family=Source+Sans+3:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
 
-        .header { display: flex; align-items: center; gap: 14px; padding: 16px 28px; background: var(--surface); border-bottom: 1px solid var(--border); flex-shrink: 0; }
-        .header-logo { width: 44px; height: 44px; border-radius: 10px; background: linear-gradient(135deg, var(--accent), var(--accent2)); display: flex; align-items: center; justify-content: center; color: white; flex-shrink: 0; }
-        .header h1 { font-family: var(--font-display); font-size: 1.35rem; font-weight: 400; color: var(--ink); line-height: 1.2; }
-        .header p { font-size: 0.78rem; color: var(--ink2); margin-top: 1px; }
-        .header-actions { margin-left: auto; display: flex; gap: 8px; }
-        .btn-ghost { padding: 8px 14px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); font-family: var(--font-body); font-size: 0.8rem; color: var(--ink2); cursor: pointer; transition: all 0.15s; }
-        .btn-ghost:hover { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
-
-        .main { flex: 1; overflow: hidden; display: flex; flex-direction: column; }
-
-        .input-phase { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 32px 24px; overflow-y: auto; }
-        .input-hero { text-align: center; max-width: 640px; margin-bottom: 28px; }
-        .input-hero h2 { font-family: var(--font-display); font-size: 2rem; font-weight: 400; color: var(--ink); margin-bottom: 10px; }
-        .input-hero p { color: var(--ink2); font-size: 0.92rem; line-height: 1.6; }
-
-        .input-card { width: 100%; max-width: 720px; background: var(--surface); border-radius: var(--radius); border: 1px solid var(--border); box-shadow: var(--shadow); overflow: hidden; transition: border-color 0.2s; }
-        .input-card.drag-over { border-color: var(--accent); border-style: dashed; background: var(--accent-soft); }
-        .input-card textarea { width: 100%; min-height: 180px; padding: 20px 22px; border: none; outline: none; resize: vertical; font-family: var(--font-body); font-size: 0.92rem; line-height: 1.7; color: var(--ink); background: transparent; }
-        .input-card textarea::placeholder { color: #B0A898; }
-
-        .image-preview-bar { display: flex; align-items: center; gap: 10px; padding: 10px 18px; border-top: 1px solid var(--border); background: var(--blue-soft); }
-        .image-thumb { width: 56px; height: 56px; border-radius: 8px; object-fit: cover; border: 1px solid var(--border); }
-        .image-info { flex: 1; }
-        .image-info .name { font-size: 0.82rem; font-weight: 600; color: var(--ink); }
-        .image-info .hint { font-size: 0.72rem; color: var(--ink2); margin-top: 2px; }
-        .image-remove { width: 28px; height: 28px; border-radius: 6px; border: 1px solid var(--border); background: var(--surface); cursor: pointer; display: flex; align-items: center; justify-content: center; color: var(--red); transition: all 0.15s; }
-        .image-remove:hover { background: var(--red-soft); border-color: var(--red); }
-
-        .input-footer { display: flex; align-items: center; justify-content: space-between; padding: 12px 18px; border-top: 1px solid var(--border); background: #FDFCFA; gap: 10px; flex-wrap: wrap; }
-        .footer-left { display: flex; align-items: center; gap: 10px; }
-        .char-count { font-size: 0.75rem; color: var(--ink2); }
-        .btn-upload { display: inline-flex; align-items: center; gap: 6px; padding: 7px 14px; border-radius: 7px; border: 1px solid var(--border); background: var(--surface); font-family: var(--font-body); font-size: 0.78rem; color: var(--ink2); cursor: pointer; transition: all 0.15s; }
-        .btn-upload:hover { border-color: var(--blue); color: var(--blue); background: var(--blue-soft); }
-
-        .btn-generate { display: inline-flex; align-items: center; gap: 8px; padding: 10px 22px; border-radius: 8px; border: none; background: linear-gradient(135deg, var(--accent), var(--accent2)); color: white; font-family: var(--font-body); font-size: 0.88rem; font-weight: 600; cursor: pointer; transition: all 0.2s; box-shadow: 0 2px 8px rgba(184,98,27,0.25); }
-        .btn-generate:hover { transform: translateY(-1px); box-shadow: 0 4px 16px rgba(184,98,27,0.35); }
-        .btn-generate:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
-
-        .features-row { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; max-width: 720px; margin-top: 24px; }
-        .feature-chip { display: flex; align-items: center; gap: 6px; padding: 8px 16px; border-radius: 20px; font-size: 0.8rem; font-weight: 600; border: 2px solid transparent; cursor: pointer; transition: all 0.2s; font-family: var(--font-body); }
-        .feature-chip:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
-        .feature-chip:active { transform: scale(0.97); }
-        .feature-chip:disabled { opacity: 0.5; cursor: not-allowed; transform: none; box-shadow: none; }
-        .fc-1 { background: var(--accent-soft); color: var(--accent); }
-        .fc-1:hover { border-color: var(--accent); }
-        .fc-2 { background: var(--green-soft); color: var(--green); }
-        .fc-2:hover { border-color: var(--green); }
-        .fc-3 { background: var(--blue-soft); color: var(--blue); }
-        .fc-3:hover { border-color: var(--blue); }
-        .fc-4 { background: var(--purple-soft); color: var(--purple); }
-        .fc-4:hover { border-color: var(--purple); }
-
-        .num-controls-row { display: flex; gap: 14px; flex-wrap: wrap; justify-content: center; max-width: 720px; margin-top: 16px; }
-        .num-control { display: flex; align-items: center; gap: 8px; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 6px 14px; font-family: var(--font-body); transition: border-color 0.2s; }
-        .num-control:hover { border-color: var(--accent); }
-        .num-label { font-size: 0.78rem; color: var(--ink2); font-weight: 500; white-space: nowrap; }
-        .num-btn { width: 28px; height: 28px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg); cursor: pointer; font-size: 1rem; color: var(--ink2); display: flex; align-items: center; justify-content: center; font-family: var(--font-body); transition: all 0.15s; line-height: 1; }
-        .num-btn:hover { background: var(--accent); color: white; border-color: var(--accent); }
-        .num-btn:active { transform: scale(0.9); }
-        .num-value { min-width: 28px; text-align: center; font-size: 1.05rem; font-weight: 700; color: var(--ink); font-family: var(--font-display); }
-
-        .result-phase { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
-        .result-toolbar { display: flex; align-items: center; gap: 8px; padding: 10px 24px; border-bottom: 1px solid var(--border); background: var(--surface); flex-shrink: 0; flex-wrap: wrap; }
-        .result-toolbar .label { font-size: 0.78rem; font-weight: 600; color: var(--ink2); text-transform: uppercase; letter-spacing: 0.05em; margin-right: 6px; }
-        .opt-btn { padding: 7px 14px; border-radius: 7px; border: 1px solid var(--border); background: var(--surface); font-family: var(--font-body); font-size: 0.78rem; color: var(--ink); cursor: pointer; transition: all 0.15s; white-space: nowrap; }
-        .opt-btn:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
-        .opt-btn:disabled { opacity: 0.4; cursor: not-allowed; }
-
-        .result-scroll { flex: 1; overflow-y: auto; padding: 28px 24px; }
-        .result-content { max-width: 780px; margin: 0 auto; background: var(--surface); border-radius: var(--radius); border: 1px solid var(--border); box-shadow: var(--shadow); padding: 32px 36px; text-align: left; }
-        .result-content h1 { font-family: var(--font-display); font-size: 1.5rem; color: var(--accent); margin: 28px 0 12px; font-weight: 400; text-align: left; }
-        .result-content h2 { font-family: var(--font-display); font-size: 1.25rem; color: var(--accent); margin: 24px 0 10px; font-weight: 400; text-align: left; }
-        .result-content h3 { font-family: var(--font-display); font-size: 1.1rem; color: var(--ink); margin: 20px 0 8px; font-weight: 400; text-align: left; }
-        .result-content p { font-size: 0.9rem; line-height: 1.75; color: var(--ink); margin-bottom: 10px; text-align: left; }
-        .result-content strong { color: var(--accent); font-weight: 600; }
-        .result-content em { color: var(--ink2); }
-        .result-content ul { padding-left: 20px; margin-bottom: 12px; text-align: left; }
-        .result-content li { font-size: 0.9rem; line-height: 1.7; color: var(--ink); margin-bottom: 4px; text-align: left; }
-        .result-content hr { border: none; border-top: 1px solid var(--border); margin: 20px 0; }
-
-        .copy-bar { display: flex; align-items: center; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
-        .btn-copy, .btn-download {
-          display: inline-flex; align-items: center; gap: 6px;
-          padding: 7px 14px; border-radius: 7px; border: 1px solid var(--border);
-          background: var(--surface); font-family: var(--font-body);
-          font-size: 0.78rem; cursor: pointer; transition: all 0.15s; color: var(--ink2);
-        }
-        .btn-copy:hover { border-color: var(--green); color: var(--green); }
-        .btn-copy.copied { border-color: var(--green); color: var(--green); background: var(--green-soft); }
-        .btn-download:hover { border-color: var(--blue); color: var(--blue); background: var(--blue-soft); }
-
-        .generated-label { display: inline-flex; align-items: center; gap: 6px; padding: 5px 12px; border-radius: 6px; font-size: 0.72rem; font-weight: 600; }
-
-        .loading-overlay { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px; padding: 40px; }
-        .spinner-ring { width: 56px; height: 56px; border-radius: 50%; border: 3px solid var(--border); border-top-color: var(--accent); animation: spin 0.9s linear infinite; }
-        @keyframes spin { to { transform: rotate(360deg); } }
-        .loading-text { font-size: 0.95rem; color: var(--ink2); animation: pulse 2s ease-in-out infinite; }
-        @keyframes pulse { 0%,100% { opacity: 0.6; } 50% { opacity: 1; } }
-
-        .error-box { max-width: 500px; margin: 24px auto; padding: 16px 20px; background: var(--red-soft); border: 1px solid #FCA5A5; border-radius: var(--radius); color: var(--red); font-size: 0.88rem; text-align: center; }
-
-        .drop-hint { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 40px 20px; color: var(--accent); gap: 8px; }
-        .drop-hint-text { font-size: 0.95rem; font-weight: 600; }
-        .drop-hint-sub { font-size: 0.78rem; color: var(--ink2); }
-
-        @media (max-width: 600px) {
-          .header { padding: 12px 16px; }
-          .header h1 { font-size: 1.1rem; }
-          .input-hero h2 { font-size: 1.5rem; }
-          .input-phase { padding: 20px 14px; }
-          .result-scroll { padding: 16px 10px; }
-          .result-content { padding: 20px 18px; }
-          .result-toolbar { padding: 8px 12px; }
-          .features-row { gap: 8px; }
-          .num-controls-row { gap: 8px; }
-        }
-      `}</style>
-
-      <div className="app-shell">
-        <header className="header">
-          <div className="header-logo"><BookIcon /></div>
+      {/* Header */}
+      <header style={{
+        padding: "20px 32px 14px",
+        borderBottom: "3px solid #c4a265",
+        background: "#fff",
+        display: "flex", alignItems: "center", justifyContent: "space-between",
+        flexWrap: "wrap", gap: 12,
+      }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+          <div style={{
+            width: 44, height: 44, borderRadius: 10,
+            background: "#c4a265", display: "flex",
+            alignItems: "center", justifyContent: "center",
+            color: "#fff", fontSize: 20,
+          }}>📋</div>
           <div>
-            <h1>EduPrompt Teacher Assistant</h1>
-            <p>Generator inteligent de materiale didactice</p>
+            <h1 style={{
+              margin: 0, fontSize: 22,
+              fontFamily: "'Playfair Display', serif",
+              fontWeight: 800, color: "#2a1f0f",
+              letterSpacing: "-0.3px",
+            }}>EduPrompt Teacher Assistant</h1>
+            <p style={{
+              margin: "2px 0 0", fontSize: 13, color: "#8a7e6e",
+              fontWeight: 400,
+            }}>Generator inteligent de materiale didactice</p>
           </div>
-          {phase === "result" && (
-            <div className="header-actions">
-              <button className="btn-ghost" onClick={handleReset}>✦ Lecție nouă</button>
-            </div>
-          )}
-        </header>
-
-        <div className="main">
-          {loading && (
-            <div className="loading-overlay">
-              <div className="spinner-ring" />
-              <div className="loading-text">{loadingMessages[loadingMsg]}</div>
-            </div>
-          )}
-
-          {error && !loading && (
-            <div style={{ padding: "20px" }}>
-              <div className="error-box">
-                ⚠ {error}<br /><br />
-                <button className="btn-ghost" onClick={() => setError("")}>Încearcă din nou</button>
-              </div>
-            </div>
-          )}
-
-          {phase === "input" && !loading && !error && (
-            <div className="input-phase">
-              <div className="input-hero">
-                <h2>Transformă orice lecție în resurse complete</h2>
-                <p>
-                  Introdu textul educațional sau încarcă o imagine cu lecția. Voi genera automat:
-                  rezumat, întrebări, itemi grilă, exerciții de analiză și fișe diferențiate.
-                </p>
-              </div>
-
-              <div
-                className={`input-card${dragOver ? " drag-over" : ""}`}
-                onDragOver={handleDragOver}
-                onDragLeave={handleDragLeave}
-                onDrop={handleDrop}
-              >
-                {dragOver ? (
-                  <div className="drop-hint">
-                    <ImageIcon />
-                    <div className="drop-hint-text">Lasă imaginea aici</div>
-                    <div className="drop-hint-sub">Acceptă JPG, PNG, GIF, WebP</div>
-                  </div>
-                ) : (
-                  <textarea
-                    value={inputText}
-                    onChange={e => setInputText(e.target.value)}
-                    placeholder={'Lipește aici textul lecției, sau trage/lipește o imagine (Ctrl+V)...\n\nExemplu: Revoluția Industrială a reprezentat o perioadă de transformare majoră în Europa, începând cu a doua jumătate a secolului al XVIII-lea...'}
-                  />
-                )}
-
-                {imageData && (
-                  <div className="image-preview-bar">
-                    <img src={imageData.preview} alt="Preview" className="image-thumb" />
-                    <div className="image-info">
-                      <div className="name">📷 {imageData.name || "Imagine lipită"}</div>
-                      <div className="hint">Imaginea va fi analizată de AI</div>
-                    </div>
-                    <button className="image-remove" onClick={() => setImageData(null)} title="Șterge imaginea">
-                      <XIcon />
-                    </button>
-                  </div>
-                )}
-
-                <div className="input-footer">
-                  <div className="footer-left">
-                    <span className="char-count">{inputText.length} caractere</span>
-                    <input ref={fileInputRef} type="file" accept="image/*" style={{ display: "none" }}
-                      onChange={(e) => { if (e.target.files?.[0]) processImage(e.target.files[0]); e.target.value = ""; }} />
-                    <button className="btn-upload" onClick={() => fileInputRef.current?.click()}>
-                      <ImageIcon /> {imageData ? "Schimbă imaginea" : "Adaugă imagine"}
-                    </button>
-                  </div>
-                  <button className="btn-generate" onClick={handleGenerate} disabled={!hasInput || loading}>
-                    <SparkleIcon /> Generează toate materialele
-                  </button>
-                </div>
-              </div>
-
-              <div className="num-controls-row">
-                <div className="num-control">
-                  <span className="num-label">✅ Itemi grilă:</span>
-                  <button className="num-btn" onClick={() => setNumGrila(n => Math.max(2, n - 1))}>−</button>
-                  <span className="num-value">{numGrila}</span>
-                  <button className="num-btn" onClick={() => setNumGrila(n => Math.min(20, n + 1))}>+</button>
-                </div>
-                <div className="num-control">
-                  <span className="num-label">🧠 Exerciții analiză:</span>
-                  <button className="num-btn" onClick={() => setNumAnaliza(n => Math.max(1, n - 1))}>−</button>
-                  <span className="num-value">{numAnaliza}</span>
-                  <button className="num-btn" onClick={() => setNumAnaliza(n => Math.min(12, n + 1))}>+</button>
-                </div>
-              </div>
-
-              <div className="features-row">
-                <button className="feature-chip fc-1" onClick={() => handleFocusedGenerate("rezumat")} disabled={!hasInput || loading}>
-                  📝 Rezumat &amp; Întrebări
-                </button>
-                <button className="feature-chip fc-2" onClick={() => handleFocusedGenerate("grila")} disabled={!hasInput || loading}>
-                  ✅ Itemi grilă ({numGrila})
-                </button>
-                <button className="feature-chip fc-3" onClick={() => handleFocusedGenerate("analiza")} disabled={!hasInput || loading}>
-                  🧠 Exerciții de analiză ({numAnaliza})
-                </button>
-                <button className="feature-chip fc-4" onClick={() => handleFocusedGenerate("fise")} disabled={!hasInput || loading}>
-                  📄 Fișe diferențiate
-                </button>
-              </div>
-            </div>
-          )}
-
-          {phase === "result" && !loading && !error && (
-            <div className="result-phase">
-              <div className="result-toolbar">
-                <span className="label">Opțiuni:</span>
-                <button className="opt-btn" onClick={() => handleOption(1)} disabled={loading}>🎯 Adaptează pe niveluri</button>
-                <button className="opt-btn" onClick={() => handleOption(2)} disabled={loading}>⏱ Mini-test 10 min cu barem</button>
-                <button className="opt-btn" onClick={() => handleOption(3)} disabled={loading}>💡 Feedback îmbunătățiri</button>
-                <button className="opt-btn" onClick={() => handleOption(4)} disabled={loading}>📋 Fișă nouă, altă temă</button>
-              </div>
-
-              <div className="result-scroll" ref={resultRef}>
-                <div style={{ maxWidth: 780, margin: "0 auto" }}>
-                  <div className="copy-bar">
-                    {activeChip && (
-                      <span className={`generated-label ${
-                        activeChip === "rezumat" ? "fc-1" : activeChip === "grila" ? "fc-2" :
-                        activeChip === "analiza" ? "fc-3" : "fc-4"
-                      }`}>
-                        {activeChip === "rezumat" && "📝 Rezumat & Întrebări"}
-                        {activeChip === "grila" && `✅ ${numGrila} Itemi grilă`}
-                        {activeChip === "analiza" && `🧠 ${numAnaliza} Exerciții de analiză`}
-                        {activeChip === "fise" && "📄 Fișe diferențiate"}
-                      </span>
-                    )}
-                    <div style={{ flex: 1 }} />
-                    <button className="btn-download" onClick={() => downloadAsDocx(result)}>
-                      <DownloadIcon /> Descarcă DOC
-                    </button>
-                    <button className={`btn-copy${copied ? " copied" : ""}`} onClick={handleCopy}>
-                      {copied ? <><CheckIcon /> Copiat!</> : <><CopyIcon /> Copiază tot</>}
-                    </button>
-                  </div>
-                  <div className="result-content" dangerouslySetInnerHTML={{ __html: md(result) }} />
-                </div>
-              </div>
-            </div>
-          )}
         </div>
-      </div>
-    </>
+
+        {/* Books toggle */}
+        <button
+          onClick={() => setShowBookPanel(!showBookPanel)}
+          style={{
+            display: "flex", alignItems: "center", gap: 8,
+            padding: "10px 20px", borderRadius: 12,
+            border: showBookPanel ? "2px solid #c4a265" : "2px solid #e0d8c8",
+            background: showBookPanel ? "rgba(196,162,101,0.08)" : "#fff",
+            cursor: "pointer", fontSize: 14, fontWeight: 600,
+            color: "#4a3f2f",
+            fontFamily: "'Source Sans 3', sans-serif",
+            transition: "all 0.2s",
+          }}
+        >
+          <span style={{ fontSize: 18 }}>📚</span>
+          Bibliotecă manuale
+          {books.length > 0 && (
+            <span style={{
+              background: "#c4a265", color: "#fff",
+              borderRadius: 10, padding: "1px 8px",
+              fontSize: 12, fontWeight: 700,
+            }}>{books.length}</span>
+          )}
+        </button>
+      </header>
+
+      {/* Books Panel */}
+      {showBookPanel && (
+        <div style={{
+          background: "#fff",
+          borderBottom: "1px solid #e8e0d0",
+          padding: "24px 32px",
+          overflow: "hidden",
+        }}>
+          <div style={{ maxWidth: 900, margin: "0 auto" }}>
+            <div style={{
+              display: "flex", alignItems: "flex-start", justifyContent: "space-between",
+              marginBottom: 18, flexWrap: "wrap", gap: 8,
+            }}>
+              <div>
+                <h2 style={{
+                  margin: 0, fontSize: 18,
+                  fontFamily: "'Playfair Display', serif",
+                  fontWeight: 700, color: "#2a1f0f",
+                }}>📚 Bibliotecă de cărți și manuale</h2>
+                <p style={{
+                  margin: "4px 0 0", fontSize: 12.5, color: "#8a7e6e",
+                }}>Adaugă manuale de referință — conținutul lor va fi folosit automat la generarea materialelor</p>
+              </div>
+            </div>
+
+            {/* Add book */}
+            <div style={{
+              background: "#faf8f3",
+              borderRadius: 14,
+              border: "1.5px dashed #d8d0c0",
+              padding: 20, marginBottom: 16,
+            }}>
+              <div style={{
+                display: "flex", gap: 12, flexWrap: "wrap",
+                alignItems: "flex-start",
+              }}>
+                <input
+                  value={bookTitle}
+                  onChange={e => setBookTitle(e.target.value)}
+                  placeholder="Titlul manualului (ex: Gramatica limbii române, clasa a VII-a)"
+                  style={{
+                    flex: "1 0 260px", padding: "11px 14px",
+                    border: "1.5px solid #e0d8c8", borderRadius: 10,
+                    fontSize: 13.5, fontFamily: "'Source Sans 3', sans-serif",
+                    background: "#fff", outline: "none",
+                  }}
+                />
+                <button
+                  onClick={addBook}
+                  disabled={!bookTitle.trim() || !bookContent.trim()}
+                  style={{
+                    padding: "11px 24px", borderRadius: 10,
+                    border: "none", cursor: "pointer",
+                    background: bookTitle.trim() && bookContent.trim()
+                      ? "linear-gradient(135deg, #c4a265, #a8893e)" : "#ddd",
+                    color: "#fff", fontSize: 13.5, fontWeight: 600,
+                    fontFamily: "'Source Sans 3', sans-serif",
+                    whiteSpace: "nowrap",
+                    transition: "all 0.2s",
+                  }}
+                >
+                  + Adaugă manual
+                </button>
+              </div>
+              <textarea
+                value={bookContent}
+                onChange={e => setBookContent(e.target.value)}
+                placeholder="Lipește aici conținutul cărții sau manualului (text copiat din PDF, carte digitală, manual scanat etc.)..."
+                rows={4}
+                style={{
+                  width: "100%", marginTop: 10,
+                  padding: "12px 14px",
+                  border: "1.5px solid #e0d8c8", borderRadius: 10,
+                  fontSize: 13, fontFamily: "'Source Sans 3', sans-serif",
+                  background: "#fff", outline: "none",
+                  resize: "vertical", lineHeight: 1.55,
+                  boxSizing: "border-box",
+                }}
+              />
+            </div>
+
+            {/* Book list */}
+            {books.length > 0 ? (
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {books.map(b => (
+                  <div key={b.id} style={{
+                    background: "#faf8f3",
+                    borderRadius: 10, padding: "14px 16px",
+                    border: "1px solid #e8e0d0",
+                  }}>
+                    <div style={{
+                      display: "flex", justifyContent: "space-between",
+                      alignItems: "center", gap: 12,
+                    }}>
+                      <div
+                        style={{ flex: 1, cursor: "pointer", display: "flex", alignItems: "center", gap: 10 }}
+                        onClick={() => setExpandedBook(expandedBook === b.id ? null : b.id)}
+                      >
+                        <span style={{ fontSize: 20 }}>📗</span>
+                        <div>
+                          <span style={{
+                            fontWeight: 600, fontSize: 14, color: "#2a1f0f",
+                            fontFamily: "'Playfair Display', serif",
+                          }}>{b.title}</span>
+                          <div style={{ fontSize: 11.5, color: "#8a7e6e", marginTop: 2 }}>
+                            {b.content.split(/\s+/).length.toLocaleString()} cuvinte · {b.content.length.toLocaleString()} caractere
+                          </div>
+                        </div>
+                        <span style={{
+                          fontSize: 11, color: "#c4a265", marginLeft: "auto",
+                          fontWeight: 500,
+                        }}>
+                          {expandedBook === b.id ? "▲ ascunde" : "▼ previzualizare"}
+                        </span>
+                      </div>
+                      <button onClick={() => removeBook(b.id)} style={{
+                        background: "rgba(180,60,60,0.06)",
+                        border: "1px solid rgba(180,60,60,0.12)",
+                        borderRadius: 8, padding: "5px 14px",
+                        fontSize: 12.5, color: "#b43c3c",
+                        cursor: "pointer", fontWeight: 500,
+                        fontFamily: "'Source Sans 3', sans-serif",
+                        flexShrink: 0,
+                      }}>✕ Șterge</button>
+                    </div>
+                    {expandedBook === b.id && (
+                      <div style={{
+                        marginTop: 12, padding: 14,
+                        background: "#fff", borderRadius: 8,
+                        fontSize: 12.5, color: "#5a5044",
+                        lineHeight: 1.65, maxHeight: 180,
+                        overflow: "auto", border: "1px solid #e8e0d0",
+                        whiteSpace: "pre-wrap",
+                      }}>
+                        {b.content.substring(0, 3000)}{b.content.length > 3000 ? "\n\n... (conținut trunchiat pentru previzualizare)" : ""}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div style={{
+                textAlign: "center", padding: "12px 0 4px", color: "#a09888",
+                fontSize: 13,
+              }}>
+                Niciun manual adăugat încă. Materialele vor fi generate doar pe baza textului lecției.
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Main */}
+      <main style={{
+        maxWidth: 900, margin: "0 auto",
+        padding: "48px 24px 60px",
+        textAlign: "center",
+      }}>
+        <h2 style={{
+          fontFamily: "'Playfair Display', serif",
+          fontSize: 34, fontWeight: 800,
+          color: "#2a1f0f", margin: "0 0 14px",
+          lineHeight: 1.25,
+        }}>
+          Transformă orice lecție în resurse complete
+        </h2>
+        <p style={{
+          fontSize: 15, color: "#7a7060",
+          margin: "0 auto 32px", lineHeight: 1.6,
+          maxWidth: 600,
+        }}>
+          Introdu textul educațional sau încarcă o imagine cu lecția. Voi genera automat:
+          sinteza materialului, întrebări, itemi grilă, exerciții de analiză și fișe diferențiate.
+        </p>
+
+        {/* Books active indicator */}
+        {books.length > 0 && (
+          <div style={{
+            display: "inline-flex", alignItems: "center", gap: 8,
+            background: "rgba(196,162,101,0.1)",
+            border: "1px solid rgba(196,162,101,0.25)",
+            borderRadius: 20, padding: "7px 18px",
+            fontSize: 12.5, color: "#6b5a3d",
+            marginBottom: 24,
+            fontFamily: "'Source Sans 3', sans-serif",
+          }}>
+            📚 {books.length} {books.length === 1 ? "manual de referință activ" : "manuale de referință active"}
+            <span style={{ color: "#a8893e", fontWeight: 600 }}>— vor fi folosite la generare</span>
+          </div>
+        )}
+
+        {/* Textarea card */}
+        <div style={{
+          background: "#fff",
+          borderRadius: 18,
+          border: "1.5px solid #e0d8c8",
+          boxShadow: "0 4px 24px rgba(42,31,15,0.04)",
+          overflow: "hidden",
+          textAlign: "left",
+        }}>
+          <textarea
+            value={lessonText}
+            onChange={e => setLessonText(e.target.value)}
+            placeholder={`Lipește aici textul lecției, sau trage/lipește o imagine (Ctrl+V)...\n\nExemplu: Revoluția Industrială a reprezentat o perioadă de transformare majoră în Europa, începând cu a doua jumătate a secolului al XVIII-lea...`}
+            rows={8}
+            style={{
+              width: "100%", border: "none", outline: "none",
+              padding: "24px 28px 12px",
+              fontSize: 15, lineHeight: 1.7,
+              fontFamily: "'Source Sans 3', sans-serif",
+              color: "#2a1f0f", resize: "vertical",
+              boxSizing: "border-box", background: "transparent",
+            }}
+          />
+          <div style={{
+            padding: "10px 20px 14px",
+            display: "flex", alignItems: "center",
+            justifyContent: "space-between",
+            borderTop: "1px solid #f0ebe0",
+            flexWrap: "wrap", gap: 10,
+          }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+              <span style={{
+                fontSize: 12.5, color: "#a09888",
+                fontFamily: "'Source Sans 3', sans-serif",
+              }}>
+                {lessonText.length.toLocaleString()} caractere
+              </span>
+              <button style={{
+                display: "flex", alignItems: "center", gap: 6,
+                padding: "7px 14px", borderRadius: 8,
+                border: "1px solid #e0d8c8", background: "#fff",
+                fontSize: 13, color: "#5a5044", cursor: "pointer",
+                fontFamily: "'Source Sans 3', sans-serif",
+              }}>
+                🖼️ Adaugă imagine
+              </button>
+            </div>
+            <button
+              onClick={() => generate("all")}
+              disabled={!lessonText.trim() || loading}
+              style={{
+                padding: "12px 28px", borderRadius: 12,
+                border: "none", cursor: "pointer",
+                background: lessonText.trim() && !loading
+                  ? "linear-gradient(135deg, #c4a265, #a8893e)" : "#ddd",
+                color: "#fff", fontSize: 14.5, fontWeight: 700,
+                fontFamily: "'Source Sans 3', sans-serif",
+                display: "flex", alignItems: "center", gap: 8,
+                boxShadow: lessonText.trim() && !loading
+                  ? "0 3px 12px rgba(196,162,101,0.35)" : "none",
+                transition: "all 0.2s",
+              }}
+            >
+              {loading && loadingType === "all" ? (
+                <>
+                  <span style={{ animation: "spin 1s linear infinite", display: "inline-block" }}>⏳</span>
+                  Se generează...
+                </>
+              ) : (
+                <>✦ Generează toate materialele</>
+              )}
+            </button>
+          </div>
+        </div>
+
+        {/* Counters */}
+        <div style={{
+          display: "flex", gap: 16,
+          justifyContent: "center",
+          marginTop: 20, flexWrap: "wrap",
+        }}>
+          <Counter label="Itemi grilă" value={grilaCount}
+            onChange={setGrilaCount} color="#6ab070" />
+          <Counter label="Exerciții analiză" value={analizaCount}
+            onChange={setAnalizaCount} color="#d47fa6" />
+        </div>
+
+        {/* Tabs */}
+        <div style={{
+          display: "flex", gap: 6, justifyContent: "center",
+          marginTop: 24, flexWrap: "wrap",
+        }}>
+          {tabs.map(t => (
+            <button
+              key={t.key}
+              onClick={() => {
+                setActiveTab(t.key);
+                if (!results[t.key] && !results.all && lessonText.trim() && !loading) generate(t.key);
+              }}
+              style={{
+                padding: "9px 18px", borderRadius: 20,
+                border: activeTab === t.key ? "1.5px solid #c4a265" : "1.5px solid transparent",
+                background: activeTab === t.key ? "rgba(196,162,101,0.08)" : "transparent",
+                fontSize: 13.5, cursor: "pointer",
+                color: activeTab === t.key ? "#6b5a3d" : "#8a7e6e",
+                fontWeight: activeTab === t.key ? 600 : 400,
+                fontFamily: "'Source Sans 3', sans-serif",
+                transition: "all 0.2s",
+                display: "flex", alignItems: "center", gap: 6,
+              }}
+            >
+              {t.icon} {t.label}
+            </button>
+          ))}
+        </div>
+
+        {/* Results */}
+        {(results[activeTab] || results.all || (loading && (loadingType === activeTab || loadingType === "all"))) && (
+          <div style={{
+            marginTop: 28,
+            background: "#fff",
+            borderRadius: 16,
+            border: "1px solid #e8e0d0",
+            boxShadow: "0 2px 16px rgba(42,31,15,0.04)",
+            padding: "28px 32px",
+            textAlign: "left",
+            minHeight: 200,
+          }}>
+            {loading && (loadingType === activeTab || loadingType === "all") ? (
+              <div style={{
+                display: "flex", flexDirection: "column",
+                alignItems: "center", justifyContent: "center",
+                padding: "60px 0", gap: 16,
+              }}>
+                <div style={{
+                  width: 48, height: 48, borderRadius: "50%",
+                  border: "3px solid #e8e0d0",
+                  borderTopColor: "#c4a265",
+                  animation: "spin 0.8s linear infinite",
+                }} />
+                <span style={{
+                  fontSize: 14, color: "#8a7e6e",
+                  fontFamily: "'Source Sans 3', sans-serif",
+                }}>Se generează materialele{books.length > 0 ? " (cu suport din manuale)" : ""}...</span>
+              </div>
+            ) : (
+              <div
+                style={{
+                  fontSize: 14.5, lineHeight: 1.75,
+                  color: "#3a3020",
+                  fontFamily: "'Source Sans 3', sans-serif",
+                }}
+                dangerouslySetInnerHTML={{
+                  __html: formatMd(results[activeTab] || results.all || "")
+                }}
+              />
+            )}
+          </div>
+        )}
+      </main>
+
+      {/* Footer */}
+      <footer style={{
+        padding: "20px 32px",
+        borderTop: "1px solid #e8e0d0",
+        background: "#fff",
+        display: "flex", alignItems: "center", justifyContent: "center",
+        gap: 8, flexWrap: "wrap",
+      }}>
+        <span style={{
+          fontSize: 13, color: "#8a7e6e",
+          fontFamily: "'Source Sans 3', sans-serif",
+        }}>
+          Feedback sau sugestii?
+        </span>
+        <a
+          href="mailto:teacherassistanteduprompt@gmail.com"
+          style={{
+            fontSize: 13, color: "#a8893e",
+            fontFamily: "'Source Sans 3', sans-serif",
+            fontWeight: 600, textDecoration: "none",
+            borderBottom: "1px dashed #c4a265",
+            paddingBottom: 1,
+          }}
+        >
+          ✉ teacherassistanteduprompt@gmail.com
+        </a>
+      </footer>
+
+      <style>{`
+        @keyframes spin {
+          to { transform: rotate(360deg); }
+        }
+        textarea::placeholder { color: #b0a898; }
+        input::placeholder { color: #b0a898; }
+        ::-webkit-scrollbar { width: 5px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: rgba(196,162,101,0.25); border-radius: 3px; }
+        * { box-sizing: border-box; }
+      `}</style>
+    </div>
   );
 }
