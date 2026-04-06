@@ -4,29 +4,75 @@ export default function App() {
   const [text, setText] = useState("");
   const [grilaCount, setGrilaCount] = useState(5);
   const [analizaCount, setAnalizaCount] = useState(3);
-  const [activeTab, setActiveTab] = useState(null);
-  const [status, setStatus] = useState("");
+  const [activeTab, setActiveTab] = useState("sinteza");
+  const [results, setResults] = useState({});
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
   const imgRef = useRef(null);
 
-  const doGenerate = (type) => {
-    if (!text.trim()) return;
-    setActiveTab(type);
-    const short = text.substring(0, 1500);
+  const generate = async (type) => {
+    if (!text.trim() || loading) return;
+    setLoading(true);
+    setError("");
+    setActiveTab(type === "all" ? "sinteza" : type);
 
-    const msgs = {
-      all: `Generează materiale didactice complete (sinteză, ${grilaCount} grilă, ${analizaCount} analiză, fișe diferențiate 🟢🟡🔴) pentru:\n${short}`,
-      sinteza: `Generează sinteza materialului și 8 întrebări pentru:\n${short}`,
-      grila: `Generează ${grilaCount} itemi grilă (A/B/C/D) cu răspunsuri pentru:\n${short}`,
-      analiza: `Generează ${analizaCount} exerciții de analiză pentru:\n${short}`,
-      fise: `Generează fișe diferențiate (🟢Bază 🟡Mediu 🔴Avansat) pentru:\n${short}`,
+    const instructions = {
+      all: `Generează materiale didactice complete în română:\n1. SINTEZA MATERIALULUI\n2. 8 ÎNTREBĂRI DE VERIFICARE\n3. ${grilaCount} ITEMI GRILĂ (A/B/C/D) + răspunsuri\n4. ${analizaCount} EXERCIȚII DE ANALIZĂ\n5. FIȘE DIFERENȚIATE (🟢Bază 🟡Mediu 🔴Avansat, câte 3)`,
+      sinteza: "Generează SINTEZA MATERIALULUI și 8 ÎNTREBĂRI DE VERIFICARE în română.",
+      grila: `Generează ${grilaCount} ITEMI GRILĂ (A/B/C/D) cu răspunsuri la final, în română.`,
+      analiza: `Generează ${analizaCount} EXERCIȚII DE ANALIZĂ aprofundată, în română.`,
+      fise: "Generează FIȘE DIFERENȚIATE pe 3 niveluri (🟢Bază 🟡Mediu 🔴Avansat, câte 3-4 exerciții), în română.",
     };
 
     try {
-      sendPrompt(msgs[type]);
-      setStatus("ok");
-    } catch {
-      setStatus("fail");
+      const response = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: "claude-sonnet-4-20250514",
+          max_tokens: 1000,
+          messages: [{
+            role: "user",
+            content: `${instructions[type]}\n\nMATERIAL:\n${text.substring(0, 3000)}`
+          }]
+        })
+      });
+
+      if (!response.ok) {
+        const errText = await response.text().catch(() => "");
+        throw new Error(`Server: ${response.status} ${errText.substring(0, 100)}`);
+      }
+
+      const data = await response.json();
+      if (data.error) throw new Error(data.error.message);
+
+      const result = data.content?.map(c => c.text || "").join("") || "";
+      if (!result) throw new Error("Răspuns gol");
+
+      if (type === "all") {
+        setResults({ sinteza: result, grila: result, analiza: result, fise: result });
+      } else {
+        setResults(prev => ({ ...prev, [type]: result }));
+      }
+    } catch (err) {
+      setError(err.message || "Eroare necunoscută");
+    } finally {
+      setLoading(false);
     }
+  };
+
+  const fmt = (t) => {
+    if (!t) return "";
+    return t
+      .replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>")
+      .replace(/\*(.*?)\*/g, "<em>$1</em>")
+      .replace(/^### (.*$)/gm, '<h3 style="margin:16px 0 6px;font-size:1.1em;color:#4a3f2f">$1</h3>')
+      .replace(/^## (.*$)/gm, '<h2 style="margin:20px 0 8px;font-size:1.2em;color:#3a2f1f;border-bottom:1px solid #e8e0d0;padding-bottom:5px">$1</h2>')
+      .replace(/^# (.*$)/gm, '<h1 style="margin:22px 0 10px;font-size:1.3em;color:#2a1f0f">$1</h1>')
+      .replace(/^- (.*$)/gm, '<div style="padding-left:16px;margin:3px 0">• $1</div>')
+      .replace(/^\d+\. (.*$)/gm, (m, p1) => `<div style="padding-left:20px;margin:3px 0">${m.match(/^\d+/)[0]}. ${p1}</div>`)
+      .replace(/\n\n/g, '<div style="height:10px"></div>')
+      .replace(/\n/g, "<br/>");
   };
 
   const tabs = [
@@ -44,8 +90,8 @@ export default function App() {
         <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
           <div style={{ width: 44, height: 44, borderRadius: 10, background: "#c4a265", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: 20 }}>📋</div>
           <div>
-            <h1 style={{ margin: 0, fontSize: 22, fontFamily: "'Playfair Display', serif", fontWeight: 800, color: "#2a1f0f", letterSpacing: "-0.3px" }}>EduPrompt Teacher Assistant</h1>
-            <p style={{ margin: "2px 0 0", fontSize: 13, color: "#8a7e6e", fontWeight: 400 }}>Generator inteligent de materiale didactice</p>
+            <h1 style={{ margin: 0, fontSize: 22, fontFamily: "'Playfair Display', serif", fontWeight: 800, color: "#2a1f0f" }}>EduPrompt Teacher Assistant</h1>
+            <p style={{ margin: "2px 0 0", fontSize: 13, color: "#8a7e6e" }}>Generator inteligent de materiale didactice</p>
           </div>
         </div>
       </header>
@@ -59,20 +105,14 @@ export default function App() {
           sinteza materialului, întrebări, itemi grilă, exerciții de analiză și fișe diferențiate.
         </p>
 
-        {status === "ok" && (
-          <div style={{ background: "rgba(106,176,112,0.08)", border: "1.5px solid rgba(106,176,112,0.3)", borderRadius: 12, padding: "14px 20px", marginBottom: 20 }}>
-            <span style={{ fontSize: 13, color: "#2d6a30", fontWeight: 600 }}>✅ Trimis! Derulează în jos în conversație.</span>
-          </div>
-        )}
-
-        {/* Textarea card */}
+        {/* Input */}
         <div style={{ background: "#fff", borderRadius: 18, border: "1.5px solid #e0d8c8", boxShadow: "0 4px 24px rgba(42,31,15,0.04)", overflow: "hidden", textAlign: "left" }}>
           <textarea
             value={text}
-            onChange={e => { setText(e.target.value); setStatus(""); }}
+            onChange={e => setText(e.target.value)}
             placeholder={`Lipește aici textul lecției, sau trage/lipește o imagine (Ctrl+V)...\n\nExemplu: Revoluția Industrială a reprezentat o perioadă de transformare majoră în Europa, începând cu a doua jumătate a secolului al XVIII-lea...`}
             rows={8}
-            style={{ width: "100%", border: "none", outline: "none", padding: "24px 28px 12px", fontSize: 15, lineHeight: 1.7, fontFamily: "'Source Sans 3', sans-serif", color: "#2a1f0f", resize: "vertical", boxSizing: "border-box", background: "transparent" }}
+            style={{ width: "100%", border: "none", outline: "none", padding: "24px 28px 12px", fontSize: 15, lineHeight: 1.7, color: "#2a1f0f", resize: "vertical", boxSizing: "border-box", background: "transparent" }}
           />
           <div style={{ padding: "10px 20px 14px", display: "flex", alignItems: "center", justifyContent: "space-between", borderTop: "1px solid #f0ebe0", flexWrap: "wrap", gap: 10 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
@@ -81,44 +121,37 @@ export default function App() {
                 🖼️ Adaugă imagine
               </button>
               <input ref={imgRef} type="file" accept="image/*" onChange={e => {
-                const file = e.target.files?.[0];
-                if (!file) return;
-                const reader = new FileReader();
-                reader.onload = () => {
-                  // Show image preview in text area context
-                  setText(prev => prev + `\n\n[Imagine atașată: ${file.name}]`);
-                };
-                reader.readAsDataURL(file);
+                const f = e.target.files?.[0]; if (!f) return;
+                setText(prev => prev + `\n[Imagine: ${f.name}]`);
                 e.target.value = "";
               }} style={{ display: "none" }} />
             </div>
-            <button onClick={() => doGenerate("all")} disabled={!text.trim()} style={{
-              padding: "12px 28px", borderRadius: 12, border: "none", cursor: text.trim() ? "pointer" : "default",
-              background: text.trim() ? "linear-gradient(135deg, #c4a265, #a8893e)" : "#ddd",
+            <button onClick={() => generate("all")} disabled={!text.trim() || loading} style={{
+              padding: "12px 28px", borderRadius: 12, border: "none", cursor: text.trim() && !loading ? "pointer" : "default",
+              background: text.trim() && !loading ? "linear-gradient(135deg, #c4a265, #a8893e)" : "#ddd",
               color: "#fff", fontSize: 14.5, fontWeight: 700,
-              display: "flex", alignItems: "center", gap: 8,
-              boxShadow: text.trim() ? "0 3px 12px rgba(196,162,101,0.35)" : "none",
+              boxShadow: text.trim() && !loading ? "0 3px 12px rgba(196,162,101,0.35)" : "none",
             }}>
-              ✦ Generează toate materialele
+              {loading ? "⏳ Se generează..." : "✦ Generează toate materialele"}
             </button>
           </div>
         </div>
 
         {/* Counters */}
         <div style={{ display: "flex", gap: 16, justifyContent: "center", marginTop: 20, flexWrap: "wrap" }}>
-          <Counter label="Itemi grilă" value={grilaCount} onChange={setGrilaCount} color="#6ab070" />
-          <Counter label="Exerciții analiză" value={analizaCount} onChange={setAnalizaCount} color="#d47fa6" />
+          <Ctr label="Itemi grilă" value={grilaCount} onChange={setGrilaCount} color="#6ab070" />
+          <Ctr label="Exerciții analiză" value={analizaCount} onChange={setAnalizaCount} color="#d47fa6" />
         </div>
 
         {/* Tabs */}
         <div style={{ display: "flex", gap: 6, justifyContent: "center", marginTop: 24, flexWrap: "wrap" }}>
           {tabs.map(t => (
-            <button key={t.key} onClick={() => doGenerate(t.key)} disabled={!text.trim()} style={{
+            <button key={t.key} onClick={() => { setActiveTab(t.key); if (!results[t.key]) generate(t.key); }} style={{
               padding: "9px 18px", borderRadius: 20,
-              border: activeTab === t.key ? "1.5px solid #c4a265" : "1.5px solid rgba(196,162,101,0.2)",
+              border: activeTab === t.key ? "1.5px solid #c4a265" : "1.5px solid transparent",
               background: activeTab === t.key ? "rgba(196,162,101,0.08)" : "transparent",
-              fontSize: 13.5, cursor: text.trim() ? "pointer" : "default",
-              color: text.trim() ? (activeTab === t.key ? "#6b5a3d" : "#8a7e6e") : "#ccc",
+              fontSize: 13.5, cursor: "pointer",
+              color: activeTab === t.key ? "#6b5a3d" : "#8a7e6e",
               fontWeight: activeTab === t.key ? 600 : 400,
               display: "flex", alignItems: "center", gap: 6,
             }}>
@@ -126,16 +159,42 @@ export default function App() {
             </button>
           ))}
         </div>
+
+        {/* Error */}
+        {error && (
+          <div style={{ marginTop: 20, background: "rgba(200,50,50,0.06)", border: "1px solid rgba(200,50,50,0.15)", borderRadius: 12, padding: "14px 20px", textAlign: "left" }}>
+            <div style={{ fontSize: 13, color: "#a03030", fontWeight: 600, marginBottom: 6 }}>⚠️ Eroare: {error}</div>
+            <div style={{ fontSize: 12.5, color: "#7a4040", lineHeight: 1.5 }}>
+              Alternativă: copiază textul din casetă și lipește-l direct în conversația cu Claude, apoi scrie ce vrei să generezi.
+            </div>
+          </div>
+        )}
+
+        {/* Results */}
+        {results[activeTab] && !loading && (
+          <div style={{ marginTop: 28, background: "#fff", borderRadius: 16, border: "1px solid #e8e0d0", boxShadow: "0 2px 16px rgba(42,31,15,0.04)", padding: "28px 32px", textAlign: "left", minHeight: 200 }}>
+            <div style={{ fontSize: 14.5, lineHeight: 1.75, color: "#3a3020" }} dangerouslySetInnerHTML={{ __html: fmt(results[activeTab]) }} />
+          </div>
+        )}
+
+        {/* Loading */}
+        {loading && (
+          <div style={{ marginTop: 28, background: "#fff", borderRadius: 16, border: "1px solid #e8e0d0", padding: "60px 32px", textAlign: "center" }}>
+            <div style={{ width: 48, height: 48, borderRadius: "50%", border: "3px solid #e8e0d0", borderTopColor: "#c4a265", animation: "spin 0.8s linear infinite", margin: "0 auto 16px" }} />
+            <span style={{ fontSize: 14, color: "#8a7e6e" }}>Se generează materialele...</span>
+          </div>
+        )}
       </main>
 
-      <footer style={{ padding: "20px 32px", borderTop: "1px solid #e8e0d0", background: "#fff", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, flexWrap: "wrap" }}>
-        <span style={{ fontSize: 13, color: "#8a7e6e" }}>Feedback sau sugestii?</span>
-        <a href="mailto:teacherassistanteduprompt@gmail.com" style={{ fontSize: 13, color: "#a8893e", fontWeight: 600, textDecoration: "none", borderBottom: "1px dashed #c4a265", paddingBottom: 1 }}>
+      <footer style={{ padding: "20px 32px", borderTop: "1px solid #e8e0d0", background: "#fff", textAlign: "center" }}>
+        <span style={{ fontSize: 13, color: "#8a7e6e" }}>Feedback sau sugestii? </span>
+        <a href="mailto:teacherassistanteduprompt@gmail.com" style={{ fontSize: 13, color: "#a8893e", fontWeight: 600, textDecoration: "none", borderBottom: "1px dashed #c4a265" }}>
           ✉ teacherassistanteduprompt@gmail.com
         </a>
       </footer>
 
       <style>{`
+        @keyframes spin { to { transform: rotate(360deg); } }
         textarea::placeholder { color: #b0a898; }
         * { box-sizing: border-box; }
       `}</style>
@@ -143,10 +202,10 @@ export default function App() {
   );
 }
 
-function Counter({ label, value, onChange, color }) {
+function Ctr({ label, value, onChange, color }) {
   const b = { width: 28, height: 28, borderRadius: "50%", border: "1.5px solid #e0d8c8", background: "#fff", fontSize: 16, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", color: "#5a5044", lineHeight: 1 };
   return (
-    <div style={{ display: "inline-flex", alignItems: "center", gap: 8, background: "#fff", borderRadius: 24, padding: "6px 16px", border: "1px solid #e8e0d0", fontSize: 13.5, fontFamily: "'Source Sans 3', sans-serif" }}>
+    <div style={{ display: "inline-flex", alignItems: "center", gap: 8, background: "#fff", borderRadius: 24, padding: "6px 16px", border: "1px solid #e8e0d0", fontSize: 13.5 }}>
       <span style={{ width: 18, height: 18, borderRadius: 4, background: color, display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 10, color: "#fff" }}>✓</span>
       <span style={{ color: "#5a5044" }}>{label}:</span>
       <button onClick={() => onChange(Math.max(1, value - 1))} style={b}>–</button>
