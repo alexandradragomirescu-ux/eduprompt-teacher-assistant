@@ -1,23 +1,19 @@
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 
 const GENERATE_PROMPT = (type, grilaCount, analizaCount, booksContext, bookTitles) => {
   const bookSection = booksContext
-    ? `\n\nCONȚINUT DIN CĂRȚI/MANUALE DE REFERINȚĂ:\n${booksContext}\n\n⚠️ INSTRUCȚIUNE CRITICĂ: Bazează-te EXCLUSIV pe conținutul din cărțile/manualele de referință de mai sus. Toate exercițiile, întrebările, definițiile și explicațiile TREBUIE să provină din aceste surse. La începutul răspunsului, menționează scurt: "📚 Surse folosite: ${bookTitles}". Dacă o informație NU se găsește în manuale, precizează explicit acest lucru.`
-    : "";
-
-  const pdfNote = bookTitles && !booksContext
-    ? `\n\n⚠️ INSTRUCȚIUNE CRITICĂ: Ai atașate manuale PDF de referință (${bookTitles}). Bazează-te EXCLUSIV pe conținutul din aceste manuale PDF. Toate exercițiile, întrebările, definițiile și explicațiile TREBUIE să provină din aceste surse. La începutul răspunsului, menționează scurt: "📚 Surse folosite: ${bookTitles}". Dacă o informație NU se găsește în manuale, precizează explicit acest lucru.`
+    ? `\n\nCONȚINUT DIN MANUALE DE REFERINȚĂ:\n${booksContext}\n\n⚠️ INSTRUCȚIUNE CRITICĂ: Bazează-te EXCLUSIV pe conținutul din manualele de mai sus. La începutul răspunsului, menționează: "📚 Surse folosite: ${bookTitles}". Dacă o informație NU se găsește în manuale, precizează explicit.`
     : "";
 
   const prompts = {
-    sinteza: `Generează o SINTEZĂ A MATERIALULUI clară a lecției și 8-10 ÎNTREBĂRI de verificare (mixte: deschise și semi-deschise). Formatează frumos cu titluri și numere.${bookSection}${pdfNote}`,
-    grila: `Generează exact ${grilaCount} ITEMI GRILĂ (întrebări cu 4 variante de răspuns A/B/C/D). La final, pune răspunsurile corecte. Numerotează-le.${bookSection}${pdfNote}`,
-    analiza: `Generează exact ${analizaCount} EXERCIȚII DE ANALIZĂ aprofundată (comparații, studii de caz, eseuri scurte, analiză critică). Numerotează-le și descrie ce se așteaptă de la elev.${bookSection}${pdfNote}`,
+    sinteza: `Generează o SINTEZĂ A MATERIALULUI clară a lecției și 8-10 ÎNTREBĂRI de verificare (mixte: deschise și semi-deschise). Formatează frumos cu titluri și numere.${bookSection}`,
+    grila: `Generează exact ${grilaCount} ITEMI GRILĂ (întrebări cu 4 variante de răspuns A/B/C/D). La final, pune răspunsurile corecte. Numerotează-le.${bookSection}`,
+    analiza: `Generează exact ${analizaCount} EXERCIȚII DE ANALIZĂ aprofundată (comparații, studii de caz, eseuri scurte, analiză critică). Numerotează-le.${bookSection}`,
     fise: `Generează FIȘE DIFERENȚIATE pe 3 niveluri:
 - 🟢 NIVEL BAZĂ (recuperare): exerciții simple, completare, adevărat/fals
 - 🟡 NIVEL MEDIU (consolidare): exerciții de aplicare, răspunsuri scurte
 - 🔴 NIVEL AVANSAT (performanță): analiză, sinteză, argumentare
-Fiecare nivel să aibă 3-4 exerciții.${bookSection}${pdfNote}`,
+Fiecare nivel să aibă 3-4 exerciții.${bookSection}`,
     all: `Generează TOATE materialele didactice pentru lecția dată:
 
 1. **SINTEZA MATERIALULUI** - sinteză clară a lecției
@@ -29,9 +25,38 @@ Fiecare nivel să aibă 3-4 exerciții.${bookSection}${pdfNote}`,
    - 🟡 MEDIU: 3 exerciții de aplicare
    - 🔴 AVANSAT: 3 exerciții de analiză/sinteză
 
-Formatează totul clar cu titluri, numerotare și separatoare.${bookSection}${pdfNote}`,
+Formatează totul clar cu titluri, numerotare și separatoare.${bookSection}`,
   };
   return prompts[type] || prompts.all;
+};
+
+// Load pdf.js library
+const loadPdfJs = () => {
+  return new Promise((resolve, reject) => {
+    if (window.pdfjsLib) { resolve(window.pdfjsLib); return; }
+    const script = document.createElement("script");
+    script.src = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js";
+    script.onload = () => {
+      window.pdfjsLib.GlobalWorkerOptions.workerSrc =
+        "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+      resolve(window.pdfjsLib);
+    };
+    script.onerror = () => reject(new Error("Nu s-a putut încărca biblioteca PDF."));
+    document.head.appendChild(script);
+  });
+};
+
+const extractTextFromPdf = async (arrayBuffer) => {
+  const pdfjsLib = await loadPdfJs();
+  const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+  let fullText = "";
+  for (let i = 1; i <= pdf.numPages; i++) {
+    const page = await pdf.getPage(i);
+    const content = await page.getTextContent();
+    const pageText = content.items.map(item => item.str).join(" ");
+    fullText += `\n--- Pagina ${i} ---\n${pageText}`;
+  }
+  return fullText.trim();
 };
 
 export default function App() {
@@ -48,21 +73,11 @@ export default function App() {
   const [pdfError, setPdfError] = useState("");
   const pdfInputRef = useRef(null);
 
-  const MAX_PDF_SIZE = 4.5 * 1024 * 1024;
-
   const buildBooksContext = useCallback(() => {
-    const textBooks = books.filter(b => !b.isPdf);
-    if (textBooks.length === 0) return "";
-    return textBooks.map((b, i) =>
-      `--- MANUAL ${i + 1}: "${b.title}" ---\n${b.content.substring(0, 8000)}\n--- SFÂRȘIT ---`
+    if (books.length === 0) return "";
+    return books.map((b, i) =>
+      `--- MANUAL ${i + 1}: "${b.title}" ---\n${b.content.substring(0, 12000)}\n--- SFÂRȘIT ---`
     ).join("\n\n");
-  }, [books]);
-
-  const buildPdfBlocks = useCallback(() => {
-    return books.filter(b => b.isPdf).map(b => ({
-      type: "document",
-      source: { type: "base64", media_type: "application/pdf", data: b.pdfData },
-    }));
   }, [books]);
 
   const generate = async (type) => {
@@ -73,32 +88,15 @@ export default function App() {
 
     try {
       const booksCtx = buildBooksContext();
-      const pdfBlocks = buildPdfBlocks();
       const bookTitles = books.map(b => b.title).join(", ");
       const prompt = GENERATE_PROMPT(type, grilaCount, analizaCount, booksCtx, books.length > 0 ? bookTitles : "");
 
-      // Track which books were used
       setUsedBooks(books.map(b => ({ title: b.title, isPdf: b.isPdf })));
 
       const hasBooks = books.length > 0;
-      const hasPdfs = pdfBlocks.length > 0;
-
       const systemPrompt = hasBooks
-        ? `Ești un profesor expert care creează materiale didactice de calitate superioară bazate STRICT pe manualele/cărțile de referință furnizate. Răspunde DOAR în limba română. Formatează răspunsul cu markdown (titluri, liste, bold). IMPORTANT: Toate materialele generate TREBUIE să fie extrase și fundamentate pe conținutul din manualele atașate. La începutul fiecărui răspuns, menționează sursele folosite. Dacă utilizatorul scrie doar un titlu de lecție, caută acel subiect în manualele atașate și generează materialele pe baza conținutului găsit. Dacă o informație NU se găsește în manuale, precizează explicit acest lucru.`
-        : `Ești un profesor expert care creează materiale didactice de calitate superioară. Răspunde DOAR în limba română. Formatează răspunsul cu markdown (titluri, liste, bold). Fii creativ, riguros și adaptat nivelului liceal/gimnazial.`;
-
-      // Build the message content
-      let messageContent;
-      if (hasPdfs) {
-        // Array format needed for PDF attachments
-        messageContent = [
-          ...pdfBlocks,
-          { type: "text", text: `Am atașat manuale PDF de referință: ${bookTitles}. Bazează-te EXCLUSIV pe conținutul lor.\n\nSUBIECTUL/LECȚIA: ${lessonText}\n\nINSTRUCȚIUNI:\n${prompt}` }
-        ];
-      } else {
-        // Simple string format - text books context is already in the prompt
-        messageContent = `SUBIECTUL/LECȚIA: ${lessonText}\n\nINSTRUCȚIUNI:\n${prompt}`;
-      }
+        ? `Ești un profesor expert care creează materiale didactice de calitate superioară bazate STRICT pe manualele furnizate. Răspunde DOAR în limba română. Formatează cu markdown. Toate materialele TREBUIE să fie din manuale. Dacă utilizatorul scrie doar un titlu de lecție, caută acel subiect în manuale. Dacă o informație NU se găsește, precizează explicit.`
+        : `Ești un profesor expert care creează materiale didactice de calitate superioară. Răspunde DOAR în limba română. Formatează cu markdown. Fii creativ și riguros.`;
 
       const res = await fetch("https://api.anthropic.com/v1/messages", {
         method: "POST",
@@ -108,16 +106,14 @@ export default function App() {
           max_tokens: 1000,
           system: systemPrompt,
           messages: [
-            { role: "user", content: messageContent }
+            { role: "user", content: `SUBIECTUL/LECȚIA: ${lessonText}\n\nINSTRUCȚIUNI:\n${prompt}` }
           ],
         }),
       });
       const data = await res.json();
-      
-      if (data.error) {
-        throw new Error(data.error.message || "Eroare API");
-      }
-      
+
+      if (data.error) throw new Error(data.error.message || "Eroare API");
+
       const text = data.content?.map(c => c.text || "").join("") || "Nu s-a primit răspuns.";
 
       if (type === "all") {
@@ -128,14 +124,7 @@ export default function App() {
       }
     } catch (err) {
       const errorMsg = err.message || "Eroare necunoscută";
-      const totalPdfSize = books.filter(b => b.isPdf).reduce((s, b) => s + b.fileSize, 0);
-      let hint = "Încearcă din nou.";
-      if (errorMsg.includes("fetch") && totalPdfSize > 2 * 1024 * 1024) {
-        hint = "PDF-ul pare prea mare pentru a fi procesat. Încearcă cu un PDF mai mic (max ~30 pagini) sau extrage doar capitolul relevant.";
-      } else if (errorMsg.includes("fetch")) {
-        hint = "Verifică conexiunea la internet și încearcă din nou.";
-      }
-      setResults(prev => ({ ...prev, [type === "all" ? "sinteza" : type]: `⚠️ Eroare la generare: ${errorMsg}\n\n${hint}` }));
+      setResults(prev => ({ ...prev, [type === "all" ? "sinteza" : type]: `⚠️ Eroare la generare: ${errorMsg}\n\nÎncearcă din nou.` }));
       if (type === "all") setActiveTab("sinteza");
     } finally {
       setLoading(false);
@@ -143,41 +132,37 @@ export default function App() {
     }
   };
 
-  const processPdfFile = (file) => {
+  const handlePdfUpload = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
     if (!file || file.type !== "application/pdf") return;
     setPdfError("");
-
-    if (file.size > MAX_PDF_SIZE) {
-      setPdfError(`PDF-ul „${file.name}" are ${(file.size / 1024 / 1024).toFixed(1)} MB — limita este 4.5 MB. Folosește un PDF mai mic sau extrage doar capitolul relevant.`);
-      return;
-    }
-
     setUploadingPdf(true);
-    const reader = new FileReader();
-    reader.onload = () => {
-      const base64 = reader.result.split(",")[1];
-      const title = file.name.replace(/\.pdf$/i, "");
+
+    try {
+      const arrayBuffer = await file.arrayBuffer();
+      const extractedText = await extractTextFromPdf(arrayBuffer);
+
+      if (!extractedText || extractedText.length < 50) {
+        setPdfError(`PDF-ul „${file.name}" nu conține text extractibil (posibil scanat). Încearcă un PDF cu text selectabil.`);
+        setUploadingPdf(false);
+        return;
+      }
+
       setBooks(prev => [...prev, {
         id: Date.now(),
-        title,
-        content: `[PDF] ${file.name} — ${(file.size / 1024).toFixed(0)} KB`,
-        pdfData: base64,
+        title: file.name.replace(/\.pdf$/i, ""),
+        content: extractedText,
         isPdf: true,
         fileName: file.name,
         fileSize: file.size,
+        pageCount: (extractedText.match(/--- Pagina \d+/g) || []).length,
       }]);
+    } catch (err) {
+      setPdfError(`Eroare la procesarea PDF-ului: ${err.message}`);
+    } finally {
       setUploadingPdf(false);
-    };
-    reader.onerror = () => {
-      setUploadingPdf(false);
-      setPdfError("Eroare la citirea fișierului. Încearcă din nou.");
-    };
-    reader.readAsDataURL(file);
-  };
-
-  const handlePdfUpload = (e) => {
-    processPdfFile(e.target.files?.[0]);
-    e.target.value = "";
+    }
   };
 
   const removeBook = (id) => setBooks(prev => prev.filter(b => b.id !== id));
@@ -213,8 +198,7 @@ export default function App() {
     border: "1.5px solid #e0d8c8", background: "#fff",
     fontSize: 16, cursor: "pointer",
     display: "inline-flex", alignItems: "center", justifyContent: "center",
-    color: "#5a5044", fontWeight: 400,
-    lineHeight: 1,
+    color: "#5a5044", fontWeight: 400, lineHeight: 1,
   };
 
   const Counter = ({ label, value, onChange, color }) => (
@@ -272,7 +256,6 @@ export default function App() {
         </div>
       </header>
 
-
       {/* Main */}
       <main style={{
         maxWidth: 900, margin: "0 auto",
@@ -309,8 +292,8 @@ export default function App() {
             value={lessonText}
             onChange={e => setLessonText(e.target.value)}
             placeholder={books.length > 0
-              ? `Scrie titlul lecției (ex: „Substantivul", „Verbul — moduri și timpuri") sau lipește textul complet al lecției.\n\nAI-ul va căuta subiectul în PDF-urile încărcate și va genera materialele pe baza lor.`
-              : `Lipește aici textul lecției, sau scrie titlul unei lecții...\n\nExemplu: Revoluția Industrială a reprezentat o perioadă de transformare majoră în Europa, începând cu a doua jumătate a secolului al XVIII-lea...\n\n💡 Sfat: Apasă „📄 Adaugă PDF" pentru a încărca un manual de referință.`}
+              ? `Scrie titlul lecției (ex: „Substantivul", „Verbul — moduri și timpuri") sau lipește textul complet.\n\nAI-ul va căuta subiectul în PDF-urile încărcate și va genera materialele pe baza lor.`
+              : `Lipește aici textul lecției, sau scrie titlul unei lecții...\n\nExemplu: Revoluția Industrială a reprezentat o perioadă de transformare majoră în Europa...\n\n💡 Sfat: Apasă „📄 Adaugă PDF" pentru a încărca un manual de referință.`}
             rows={8}
             style={{
               width: "100%", border: "none", outline: "none",
@@ -321,6 +304,7 @@ export default function App() {
               boxSizing: "border-box", background: "transparent",
             }}
           />
+          {/* Bottom bar */}
           <div style={{
             padding: "10px 20px 14px",
             display: "flex", alignItems: "center",
@@ -350,13 +334,14 @@ export default function App() {
                 style={{
                   display: "flex", alignItems: "center", gap: 6,
                   padding: "7px 14px", borderRadius: 8,
-                  border: "1px solid #c4a265", background: books.length > 0 ? "rgba(196,162,101,0.08)" : "#fff",
+                  border: "1px solid #c4a265",
+                  background: books.length > 0 ? "rgba(196,162,101,0.08)" : "#fff",
                   fontSize: 13, color: "#a8893e", cursor: "pointer",
                   fontFamily: "'Source Sans 3', sans-serif",
                   fontWeight: 500,
                 }}>
                 {uploadingPdf
-                  ? <><span style={{ animation: "spin 1s linear infinite", display: "inline-block" }}>⏳</span> Se încarcă...</>
+                  ? <><span style={{ animation: "spin 1s linear infinite", display: "inline-block" }}>⏳</span> Se extrage textul...</>
                   : <>📄 Adaugă PDF</>
                 }
               </button>
@@ -394,7 +379,8 @@ export default function App() {
               )}
             </button>
           </div>
-          {/* Loaded PDFs */}
+
+          {/* Loaded PDFs chips */}
           {books.length > 0 && (
             <div style={{
               padding: "8px 20px 12px",
@@ -408,47 +394,43 @@ export default function App() {
               {books.map(b => (
                 <span key={b.id} style={{
                   display: "inline-flex", alignItems: "center", gap: 5,
-                  background: "rgba(196,162,101,0.1)",
-                  border: "1px solid rgba(196,162,101,0.25)",
+                  background: "rgba(106,176,112,0.08)",
+                  border: "1px solid rgba(106,176,112,0.25)",
                   borderRadius: 6, padding: "3px 10px",
-                  fontSize: 12, color: "#6b5a3d",
+                  fontSize: 12, color: "#3a6a3d",
                   fontFamily: "'Source Sans 3', sans-serif",
                   fontWeight: 500,
                 }}>
                   📄 {b.title}
+                  <span style={{ fontSize: 10, color: "#6a9a6d" }}>
+                    ({b.pageCount} pag. · {(b.content.length / 1000).toFixed(0)}k car.)
+                  </span>
                   <span
                     onClick={() => removeBook(b.id)}
-                    style={{
-                      cursor: "pointer", color: "#b43c3c",
-                      fontSize: 14, lineHeight: 1, marginLeft: 2,
-                      fontWeight: 400,
-                    }}
+                    style={{ cursor: "pointer", color: "#b43c3c", fontSize: 14, lineHeight: 1, marginLeft: 2 }}
                   >×</span>
                 </span>
               ))}
             </div>
           )}
+
           {/* PDF error */}
           {pdfError && (
             <div style={{
-              padding: "10px 20px 12px",
-              borderTop: books.length > 0 ? "none" : "1px solid #f0ebe0",
-              display: "flex", alignItems: "center", gap: 8,
-              fontFamily: "'Source Sans 3', sans-serif",
+              padding: "8px 20px 12px",
+              borderTop: "1px solid #f0ebe0",
             }}>
               <div style={{
                 background: "rgba(200,50,50,0.06)",
                 border: "1px solid rgba(200,50,50,0.15)",
                 borderRadius: 8, padding: "8px 14px",
-                fontSize: 12.5, color: "#a03030",
-                lineHeight: 1.5, flex: 1,
+                fontSize: 12.5, color: "#a03030", lineHeight: 1.5,
+                display: "flex", justifyContent: "space-between", alignItems: "center",
+                fontFamily: "'Source Sans 3', sans-serif",
               }}>
-                ⚠️ {pdfError}
+                <span>⚠️ {pdfError}</span>
+                <span onClick={() => setPdfError("")} style={{ cursor: "pointer", color: "#aaa", fontSize: 16, marginLeft: 10 }}>×</span>
               </div>
-              <span
-                onClick={() => setPdfError("")}
-                style={{ cursor: "pointer", color: "#aaa", fontSize: 16 }}
-              >×</span>
             </div>
           )}
         </div>
@@ -546,7 +528,7 @@ export default function App() {
                         borderRadius: 6, padding: "3px 10px",
                         fontSize: 12, color: "#3a6a3d", fontWeight: 500,
                       }}>
-                        {b.isPdf ? "📄" : "📗"} {b.title}
+                        📄 {b.title}
                       </span>
                     ))}
                   </div>
