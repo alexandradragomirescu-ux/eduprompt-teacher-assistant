@@ -95,23 +95,32 @@ export default function App() {
 
       const hasBooks = books.length > 0;
       const systemPrompt = hasBooks
-        ? `Ești un profesor expert care creează materiale didactice de calitate superioară bazate STRICT pe manualele furnizate. Răspunde DOAR în limba română. Formatează cu markdown. Toate materialele TREBUIE să fie din manuale. Dacă utilizatorul scrie doar un titlu de lecție, caută acel subiect în manuale. Dacă o informație NU se găsește, precizează explicit.`
-        : `Ești un profesor expert care creează materiale didactice de calitate superioară. Răspunde DOAR în limba română. Formatează cu markdown. Fii creativ și riguros.`;
+        ? `Ești un profesor expert care creează materiale didactice bazate STRICT pe manualele furnizate. Răspunde DOAR în română. Formatează cu markdown. Dacă utilizatorul scrie doar un titlu, caută subiectul în manuale.`
+        : `Ești un profesor expert care creează materiale didactice. Răspunde DOAR în română. Formatează cu markdown.`;
+
+      // Truncate content to avoid request too large
+      const userText = `SUBIECTUL: ${lessonText}\n\nINSTRUCȚIUNI:\n${prompt}`;
+      const truncatedText = userText.substring(0, 30000);
+
+      const requestBody = {
+        model: "claude-sonnet-4-20250514",
+        max_tokens: 1000,
+        system: systemPrompt,
+        messages: [{ role: "user", content: truncatedText }],
+      };
 
       const res = await fetch("https://api.anthropic.com/v1/messages", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          model: "claude-sonnet-4-20250514",
-          max_tokens: 1000,
-          system: systemPrompt,
-          messages: [
-            { role: "user", content: `SUBIECTUL/LECȚIA: ${lessonText}\n\nINSTRUCȚIUNI:\n${prompt}` }
-          ],
-        }),
+        body: JSON.stringify(requestBody),
       });
-      const data = await res.json();
 
+      if (!res.ok) {
+        const errorBody = await res.text();
+        throw new Error(`HTTP ${res.status}: ${errorBody.substring(0, 200)}`);
+      }
+
+      const data = await res.json();
       if (data.error) throw new Error(data.error.message || "Eroare API");
 
       const text = data.content?.map(c => c.text || "").join("") || "Nu s-a primit răspuns.";
@@ -124,7 +133,7 @@ export default function App() {
       }
     } catch (err) {
       const errorMsg = err.message || "Eroare necunoscută";
-      setResults(prev => ({ ...prev, [type === "all" ? "sinteza" : type]: `⚠️ Eroare la generare: ${errorMsg}\n\nÎncearcă din nou.` }));
+      setResults(prev => ({ ...prev, [type === "all" ? "sinteza" : type]: `⚠️ Eroare: ${errorMsg}` }));
       if (type === "all") setActiveTab("sinteza");
     } finally {
       setLoading(false);
