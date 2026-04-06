@@ -64,7 +64,6 @@ const OPTION_PROMPTS = {
   4: "Generează o nouă fișă de lucru pe o temă conexă/complementară celei originale, păstrând același format și nivel de calitate."
 };
 
-/* ── tiny markdown→HTML ── */
 function md(text) {
   if (!text) return "";
   let h = text
@@ -86,7 +85,6 @@ function md(text) {
   return h;
 }
 
-/* ── DOCX download (HTML→Word-compatible .doc) ── */
 function downloadAsDocx(markdownText) {
   const htmlContent = md(markdownText);
   const docTemplate = `
@@ -97,59 +95,15 @@ function downloadAsDocx(markdownText) {
 <head>
 <meta charset="utf-8">
 <style>
-  body {
-    font-family: 'Segoe UI', Calibri, Arial, sans-serif;
-    font-size: 11pt;
-    line-height: 1.6;
-    color: #1a1a2e;
-    max-width: 700px;
-    margin: 0 auto;
-    padding: 40px;
-  }
-  h1 {
-    font-family: 'Georgia', serif;
-    font-size: 18pt;
-    color: #B8621B;
-    margin-top: 24pt;
-    margin-bottom: 8pt;
-    border-bottom: 2px solid #E8E2D8;
-    padding-bottom: 6pt;
-  }
-  h2 {
-    font-family: 'Georgia', serif;
-    font-size: 15pt;
-    color: #B8621B;
-    margin-top: 20pt;
-    margin-bottom: 6pt;
-  }
-  h3 {
-    font-family: 'Georgia', serif;
-    font-size: 13pt;
-    color: #1a1a2e;
-    margin-top: 16pt;
-    margin-bottom: 6pt;
-  }
-  p {
-    font-size: 11pt;
-    margin-bottom: 6pt;
-  }
-  strong {
-    color: #B8621B;
-  }
-  ul {
-    padding-left: 20pt;
-    margin-bottom: 8pt;
-  }
-  li {
-    font-size: 11pt;
-    margin-bottom: 3pt;
-    line-height: 1.6;
-  }
-  hr {
-    border: none;
-    border-top: 1px solid #E8E2D8;
-    margin: 16pt 0;
-  }
+  body { font-family: 'Segoe UI', Calibri, Arial, sans-serif; font-size: 11pt; line-height: 1.6; color: #1a1a2e; max-width: 700px; margin: 0 auto; padding: 40px; }
+  h1 { font-family: 'Georgia', serif; font-size: 18pt; color: #B8621B; margin-top: 24pt; margin-bottom: 8pt; border-bottom: 2px solid #E8E2D8; padding-bottom: 6pt; }
+  h2 { font-family: 'Georgia', serif; font-size: 15pt; color: #B8621B; margin-top: 20pt; margin-bottom: 6pt; }
+  h3 { font-family: 'Georgia', serif; font-size: 13pt; color: #1a1a2e; margin-top: 16pt; margin-bottom: 6pt; }
+  p { font-size: 11pt; margin-bottom: 6pt; }
+  strong { color: #B8621B; }
+  ul { padding-left: 20pt; margin-bottom: 8pt; }
+  li { font-size: 11pt; margin-bottom: 3pt; line-height: 1.6; }
+  hr { border: none; border-top: 1px solid #E8E2D8; margin: 16pt 0; }
 </style>
 </head>
 <body>
@@ -163,7 +117,6 @@ ${htmlContent}
 </div>
 </body>
 </html>`;
-
   const blob = new Blob(['\ufeff', docTemplate], { type: 'application/msword' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -177,7 +130,6 @@ ${htmlContent}
   URL.revokeObjectURL(url);
 }
 
-/* ── icons ── */
 const BookIcon = () => (
   <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>
@@ -298,7 +250,7 @@ export default function EduPromptApp() {
     setLoadingMsg(0);
     try {
       const msgs = [...history, { role: "user", content: userContent }];
-      const res = await fetch("/api/chat", {
+      const res = await fetch("https://api.anthropic.com/v1/messages", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -394,7 +346,6 @@ export default function EduPromptApp() {
         html, body, #root { height: 100%; }
         body { background: var(--bg); font-family: var(--font-body); color: var(--ink); }
         .app-shell { display: flex; flex-direction: column; height: 100vh; max-height: 100vh; overflow: hidden; background: var(--bg); }
-
         .header { display: flex; align-items: center; gap: 14px; padding: 16px 28px; background: var(--surface); border-bottom: 1px solid var(--border); flex-shrink: 0; }
         .header-logo { width: 44px; height: 44px; border-radius: 10px; background: linear-gradient(135deg, var(--accent), var(--accent2)); display: flex; align-items: center; justify-content: center; color: white; flex-shrink: 0; }
         .header h1 { font-family: var(--font-display); font-size: 1.35rem; font-weight: 400; color: var(--ink); line-height: 1.2; }
@@ -402,19 +353,15 @@ export default function EduPromptApp() {
         .header-actions { margin-left: auto; display: flex; gap: 8px; }
         .btn-ghost { padding: 8px 14px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); font-family: var(--font-body); font-size: 0.8rem; color: var(--ink2); cursor: pointer; transition: all 0.15s; }
         .btn-ghost:hover { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
-
         .main { flex: 1; overflow: hidden; display: flex; flex-direction: column; }
-
         .input-phase { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 32px 24px; overflow-y: auto; }
         .input-hero { text-align: center; max-width: 640px; margin-bottom: 28px; }
         .input-hero h2 { font-family: var(--font-display); font-size: 2rem; font-weight: 400; color: var(--ink); margin-bottom: 10px; }
         .input-hero p { color: var(--ink2); font-size: 0.92rem; line-height: 1.6; }
-
         .input-card { width: 100%; max-width: 720px; background: var(--surface); border-radius: var(--radius); border: 1px solid var(--border); box-shadow: var(--shadow); overflow: hidden; transition: border-color 0.2s; }
         .input-card.drag-over { border-color: var(--accent); border-style: dashed; background: var(--accent-soft); }
         .input-card textarea { width: 100%; min-height: 180px; padding: 20px 22px; border: none; outline: none; resize: vertical; font-family: var(--font-body); font-size: 0.92rem; line-height: 1.7; color: var(--ink); background: transparent; }
         .input-card textarea::placeholder { color: #B0A898; }
-
         .image-preview-bar { display: flex; align-items: center; gap: 10px; padding: 10px 18px; border-top: 1px solid var(--border); background: var(--blue-soft); }
         .image-thumb { width: 56px; height: 56px; border-radius: 8px; object-fit: cover; border: 1px solid var(--border); }
         .image-info { flex: 1; }
@@ -422,21 +369,17 @@ export default function EduPromptApp() {
         .image-info .hint { font-size: 0.72rem; color: var(--ink2); margin-top: 2px; }
         .image-remove { width: 28px; height: 28px; border-radius: 6px; border: 1px solid var(--border); background: var(--surface); cursor: pointer; display: flex; align-items: center; justify-content: center; color: var(--red); transition: all 0.15s; }
         .image-remove:hover { background: var(--red-soft); border-color: var(--red); }
-
         .input-footer { display: flex; align-items: center; justify-content: space-between; padding: 12px 18px; border-top: 1px solid var(--border); background: #FDFCFA; gap: 10px; flex-wrap: wrap; }
         .footer-left { display: flex; align-items: center; gap: 10px; }
         .char-count { font-size: 0.75rem; color: var(--ink2); }
         .btn-upload { display: inline-flex; align-items: center; gap: 6px; padding: 7px 14px; border-radius: 7px; border: 1px solid var(--border); background: var(--surface); font-family: var(--font-body); font-size: 0.78rem; color: var(--ink2); cursor: pointer; transition: all 0.15s; }
         .btn-upload:hover { border-color: var(--blue); color: var(--blue); background: var(--blue-soft); }
-
         .btn-generate { display: inline-flex; align-items: center; gap: 8px; padding: 10px 22px; border-radius: 8px; border: none; background: linear-gradient(135deg, var(--accent), var(--accent2)); color: white; font-family: var(--font-body); font-size: 0.88rem; font-weight: 600; cursor: pointer; transition: all 0.2s; box-shadow: 0 2px 8px rgba(184,98,27,0.25); }
         .btn-generate:hover { transform: translateY(-1px); box-shadow: 0 4px 16px rgba(184,98,27,0.35); }
         .btn-generate:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
-
         .features-row { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; max-width: 720px; margin-top: 24px; }
         .feature-chip { display: flex; align-items: center; gap: 6px; padding: 8px 16px; border-radius: 20px; font-size: 0.8rem; font-weight: 600; border: 2px solid transparent; cursor: pointer; transition: all 0.2s; font-family: var(--font-body); }
         .feature-chip:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
-        .feature-chip:active { transform: scale(0.97); }
         .feature-chip:disabled { opacity: 0.5; cursor: not-allowed; transform: none; box-shadow: none; }
         .fc-1 { background: var(--accent-soft); color: var(--accent); }
         .fc-1:hover { border-color: var(--accent); }
@@ -446,60 +389,48 @@ export default function EduPromptApp() {
         .fc-3:hover { border-color: var(--blue); }
         .fc-4 { background: var(--purple-soft); color: var(--purple); }
         .fc-4:hover { border-color: var(--purple); }
-
         .num-controls-row { display: flex; gap: 14px; flex-wrap: wrap; justify-content: center; max-width: 720px; margin-top: 16px; }
         .num-control { display: flex; align-items: center; gap: 8px; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 6px 14px; font-family: var(--font-body); transition: border-color 0.2s; }
         .num-control:hover { border-color: var(--accent); }
         .num-label { font-size: 0.78rem; color: var(--ink2); font-weight: 500; white-space: nowrap; }
         .num-btn { width: 28px; height: 28px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg); cursor: pointer; font-size: 1rem; color: var(--ink2); display: flex; align-items: center; justify-content: center; font-family: var(--font-body); transition: all 0.15s; line-height: 1; }
         .num-btn:hover { background: var(--accent); color: white; border-color: var(--accent); }
-        .num-btn:active { transform: scale(0.9); }
         .num-value { min-width: 28px; text-align: center; font-size: 1.05rem; font-weight: 700; color: var(--ink); font-family: var(--font-display); }
-
         .result-phase { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
         .result-toolbar { display: flex; align-items: center; gap: 8px; padding: 10px 24px; border-bottom: 1px solid var(--border); background: var(--surface); flex-shrink: 0; flex-wrap: wrap; }
         .result-toolbar .label { font-size: 0.78rem; font-weight: 600; color: var(--ink2); text-transform: uppercase; letter-spacing: 0.05em; margin-right: 6px; }
         .opt-btn { padding: 7px 14px; border-radius: 7px; border: 1px solid var(--border); background: var(--surface); font-family: var(--font-body); font-size: 0.78rem; color: var(--ink); cursor: pointer; transition: all 0.15s; white-space: nowrap; }
         .opt-btn:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
         .opt-btn:disabled { opacity: 0.4; cursor: not-allowed; }
-
         .result-scroll { flex: 1; overflow-y: auto; padding: 28px 24px; }
         .result-content { max-width: 780px; margin: 0 auto; background: var(--surface); border-radius: var(--radius); border: 1px solid var(--border); box-shadow: var(--shadow); padding: 32px 36px; text-align: left; }
-        .result-content h1 { font-family: var(--font-display); font-size: 1.5rem; color: var(--accent); margin: 28px 0 12px; font-weight: 400; text-align: left; }
-        .result-content h2 { font-family: var(--font-display); font-size: 1.25rem; color: var(--accent); margin: 24px 0 10px; font-weight: 400; text-align: left; }
-        .result-content h3 { font-family: var(--font-display); font-size: 1.1rem; color: var(--ink); margin: 20px 0 8px; font-weight: 400; text-align: left; }
-        .result-content p { font-size: 0.9rem; line-height: 1.75; color: var(--ink); margin-bottom: 10px; text-align: left; }
+        .result-content h1 { font-family: var(--font-display); font-size: 1.5rem; color: var(--accent); margin: 28px 0 12px; font-weight: 400; }
+        .result-content h2 { font-family: var(--font-display); font-size: 1.25rem; color: var(--accent); margin: 24px 0 10px; font-weight: 400; }
+        .result-content h3 { font-family: var(--font-display); font-size: 1.1rem; color: var(--ink); margin: 20px 0 8px; font-weight: 400; }
+        .result-content p { font-size: 0.9rem; line-height: 1.75; color: var(--ink); margin-bottom: 10px; }
         .result-content strong { color: var(--accent); font-weight: 600; }
-        .result-content em { color: var(--ink2); }
-        .result-content ul { padding-left: 20px; margin-bottom: 12px; text-align: left; }
-        .result-content li { font-size: 0.9rem; line-height: 1.7; color: var(--ink); margin-bottom: 4px; text-align: left; }
+        .result-content ul { padding-left: 20px; margin-bottom: 12px; }
+        .result-content li { font-size: 0.9rem; line-height: 1.7; color: var(--ink); margin-bottom: 4px; }
         .result-content hr { border: none; border-top: 1px solid var(--border); margin: 20px 0; }
-
         .copy-bar { display: flex; align-items: center; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
-        .btn-copy, .btn-download {
-          display: inline-flex; align-items: center; gap: 6px;
-          padding: 7px 14px; border-radius: 7px; border: 1px solid var(--border);
-          background: var(--surface); font-family: var(--font-body);
-          font-size: 0.78rem; cursor: pointer; transition: all 0.15s; color: var(--ink2);
-        }
+        .btn-copy, .btn-download { display: inline-flex; align-items: center; gap: 6px; padding: 7px 14px; border-radius: 7px; border: 1px solid var(--border); background: var(--surface); font-family: var(--font-body); font-size: 0.78rem; cursor: pointer; transition: all 0.15s; color: var(--ink2); }
         .btn-copy:hover { border-color: var(--green); color: var(--green); }
         .btn-copy.copied { border-color: var(--green); color: var(--green); background: var(--green-soft); }
         .btn-download:hover { border-color: var(--blue); color: var(--blue); background: var(--blue-soft); }
-
         .generated-label { display: inline-flex; align-items: center; gap: 6px; padding: 5px 12px; border-radius: 6px; font-size: 0.72rem; font-weight: 600; }
-
         .loading-overlay { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px; padding: 40px; }
         .spinner-ring { width: 56px; height: 56px; border-radius: 50%; border: 3px solid var(--border); border-top-color: var(--accent); animation: spin 0.9s linear infinite; }
         @keyframes spin { to { transform: rotate(360deg); } }
         .loading-text { font-size: 0.95rem; color: var(--ink2); animation: pulse 2s ease-in-out infinite; }
         @keyframes pulse { 0%,100% { opacity: 0.6; } 50% { opacity: 1; } }
-
         .error-box { max-width: 500px; margin: 24px auto; padding: 16px 20px; background: var(--red-soft); border: 1px solid #FCA5A5; border-radius: var(--radius); color: var(--red); font-size: 0.88rem; text-align: center; }
-
         .drop-hint { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 40px 20px; color: var(--accent); gap: 8px; }
         .drop-hint-text { font-size: 0.95rem; font-weight: 600; }
         .drop-hint-sub { font-size: 0.78rem; color: var(--ink2); }
-
+        .app-footer { padding: 12px 28px; border-top: 1px solid var(--border); background: var(--surface); text-align: center; flex-shrink: 0; }
+        .app-footer span { font-size: 0.78rem; color: var(--ink2); }
+        .app-footer a { font-size: 0.78rem; color: var(--accent); font-weight: 600; text-decoration: none; border-bottom: 1px dashed var(--accent); padding-bottom: 1px; }
+        .app-footer a:hover { color: var(--accent2); }
         @media (max-width: 600px) {
           .header { padding: 12px 16px; }
           .header h1 { font-size: 1.1rem; }
@@ -508,8 +439,6 @@ export default function EduPromptApp() {
           .result-scroll { padding: 16px 10px; }
           .result-content { padding: 20px 18px; }
           .result-toolbar { padding: 8px 12px; }
-          .features-row { gap: 8px; }
-          .num-controls-row { gap: 8px; }
         }
       `}</style>
 
@@ -671,6 +600,11 @@ export default function EduPromptApp() {
               </div>
             </div>
           )}
+        </div>
+
+        <div className="app-footer">
+          <span>Feedback sau sugestii? </span>
+          <a href="mailto:teacherassistanteduprompt@gmail.com">✉ teacherassistanteduprompt@gmail.com</a>
         </div>
       </div>
     </>
